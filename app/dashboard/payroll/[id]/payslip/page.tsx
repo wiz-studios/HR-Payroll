@@ -64,15 +64,15 @@ export default function PayslipPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6 print:max-w-none print:space-y-0">
       {/* Header Button */}
-      <Button variant="outline" onClick={() => router.back()}>
+      <Button variant="outline" className="print:hidden" onClick={() => router.back()}>
         Back
       </Button>
 
       {/* Payslip */}
-      <Card className="border-2">
-        <CardHeader className="bg-blue-50 border-b-2">
+      <Card className="border-2 print:rounded-none print:border-0 print:shadow-none">
+        <CardHeader className="border-b-2 bg-blue-50 print:bg-white">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">PAYROLL PERIOD</p>
@@ -183,7 +183,7 @@ export default function PayslipPage() {
           </div>
 
           {/* Net Pay */}
-          <div className="bg-green-50 p-6 rounded-lg border-2 border-green-200 mb-8">
+          <div className="mb-8 rounded-lg border-2 border-green-200 bg-green-50 p-6 print:bg-white">
             <p className="text-sm text-gray-600 uppercase tracking-wider mb-2">Net Pay</p>
             <p className="text-4xl font-bold text-green-700">{formatCurrency(detail.netPay)}</p>
           </div>
@@ -212,17 +212,8 @@ export default function PayslipPage() {
       </Card>
 
       {/* Actions */}
-      <div className="flex gap-3 justify-center">
-        <Button
-          onClick={() => {
-            const printWindow = window.open('', '', 'width=800,height=600');
-            if (printWindow) {
-              printWindow.document.write(document.documentElement.innerHTML);
-              printWindow.document.close();
-              printWindow.print();
-            }
-          }}
-        >
+      <div className="flex justify-center gap-3 print:hidden">
+        <Button onClick={() => window.print()}>
           Print Payslip
         </Button>
       </div>

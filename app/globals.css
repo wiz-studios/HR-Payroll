@@ -179,3 +179,15 @@
     pointer-events: none;
   }
 }
+
+@media print {
+  html,
+  body {
+    background: white !important;
+  }
+
+  body {
+    min-height: auto;
+    background-image: none !important;
+  }
+}
