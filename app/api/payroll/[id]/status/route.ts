@@ -56,6 +56,41 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   const now = new Date().toISOString();
+  if (nextStatus === 'processed') {
+    const { error: detailError } = await admin
+      .schema('HR')
+      .from('payroll_details')
+      .update({
+        payment_status: 'processed',
+        updated_at: now,
+      })
+      .eq('payroll_id', id)
+      .eq('company_id', auth.session.companyId)
+      .eq('payment_status', 'pending');
+
+    if (detailError) {
+      return NextResponse.json({ error: detailError.message }, { status: 400 });
+    }
+  }
+
+  if (nextStatus === 'paid') {
+    const { error: detailError } = await admin
+      .schema('HR')
+      .from('payroll_details')
+      .update({
+        payment_status: 'paid',
+        payment_date: now,
+        updated_at: now,
+      })
+      .eq('payroll_id', id)
+      .eq('company_id', auth.session.companyId)
+      .in('payment_status', ['pending', 'processed']);
+
+    if (detailError) {
+      return NextResponse.json({ error: detailError.message }, { status: 400 });
+    }
+  }
+
   const { data, error } = await admin
     .schema('HR')
     .from('payroll_runs')
@@ -88,12 +123,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       approvedAt: existing.approved_at,
       processedAt: existing.processed_at,
       lockedAt: existing.locked_at,
+      paymentStatus: existing.status === 'paid' ? 'paid' : existing.status === 'processed' ? 'processed' : 'pending',
     },
     after: {
       status: data.status,
       approvedAt: data.approved_at,
       processedAt: data.processed_at,
       lockedAt: data.locked_at,
+      paymentStatus: nextStatus === 'paid' ? 'paid' : nextStatus === 'processed' ? 'processed' : 'pending',
     },
   });
 
