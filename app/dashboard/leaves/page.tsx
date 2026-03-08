@@ -91,6 +91,7 @@ export default function LeavesPage() {
   }, []);
 
   const pendingLeaves = useMemo(() => leaves.filter((leave) => leave.status === 'pending').length, [leaves]);
+  const canManageLeaves = session?.userRole === 'admin' || session?.userRole === 'manager';
 
   const handleSubmitLeave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -171,6 +172,7 @@ export default function LeavesPage() {
         title="Leave management"
         description="Track approved and pending absences before they affect payroll planning, staffing, or month-end approvals."
         actions={
+          canManageLeaves ? (
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
             <DialogTrigger asChild>
               <Button className="rounded-2xl px-5">
@@ -257,6 +259,7 @@ export default function LeavesPage() {
               </form>
             </DialogContent>
           </Dialog>
+          ) : null
         }
       />
 
@@ -319,14 +322,18 @@ export default function LeavesPage() {
               key: 'id',
               label: 'Action',
               render: (_, row) => (
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'approved')}>
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'rejected')}>
-                    Reject
-                  </Button>
-                </div>
+                canManageLeaves && row.status === 'pending' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'approved')}>
+                      Approve
+                    </Button>
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'rejected')}>
+                      Reject
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">No action</span>
+                )
               ),
             },
           ]}

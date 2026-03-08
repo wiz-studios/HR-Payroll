@@ -5,6 +5,9 @@ import { insertAuditLog, mapEmployee } from '@/lib/hr/repository';
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
+  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+    return NextResponse.json({ error: 'Only administrators and managers can update employees.' }, { status: 403 });
+  }
 
   const { id } = await context.params;
   const updates = await request.json();

@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const isAdmin = session?.userRole === 'admin';
 
   useEffect(() => {
     let mounted = true;
@@ -120,6 +121,7 @@ export default function SettingsPage() {
         title="Company controls"
         description="Maintain the organization profile, statutory identifiers, and user access structure that underpin payroll operations."
         actions={
+          isAdmin ? (
           <Dialog open={isAddingUser} onOpenChange={setIsAddingUser}>
             <DialogTrigger asChild>
               <Button className="rounded-2xl px-5">
@@ -187,6 +189,7 @@ export default function SettingsPage() {
               </form>
             </DialogContent>
           </Dialog>
+          ) : null
         }
       />
 
@@ -214,7 +217,7 @@ export default function SettingsPage() {
               <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Company Profile</p>
               <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">Organization details</h2>
             </div>
-            {!isEditingCompany ? (
+            {isAdmin && !isEditingCompany ? (
               <Button variant="outline" className="rounded-2xl" onClick={() => setIsEditingCompany(true)}>
                 Edit profile
               </Button>
@@ -234,7 +237,7 @@ export default function SettingsPage() {
             ].map(([key, label]) => (
               <div key={key} className={key === 'address' ? 'md:col-span-2' : ''}>
                 <Label htmlFor={key}>{label}</Label>
-                {isEditingCompany ? (
+                {isAdmin && isEditingCompany ? (
                   <Input
                     id={key}
                     value={String(companyForm[key as keyof Company] ?? '')}
@@ -249,7 +252,7 @@ export default function SettingsPage() {
               </div>
             ))}
 
-            {isEditingCompany ? (
+            {isAdmin && isEditingCompany ? (
               <div className="md:col-span-2 flex justify-end gap-3 pt-2">
                 <Button
                   type="button"
@@ -301,9 +304,13 @@ export default function SettingsPage() {
                 key: 'id',
                 label: 'Security',
                 render: (_, user) => (
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void handleResetPassword(user.id)}>
-                    Reset password
-                  </Button>
+                  isAdmin ? (
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void handleResetPassword(user.id)}>
+                      Reset password
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Restricted</span>
+                  )
                 ),
               },
             ]}

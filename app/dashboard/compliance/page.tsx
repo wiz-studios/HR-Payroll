@@ -63,6 +63,8 @@ export default function CompliancePage() {
   }, []);
 
   const pendingCount = useMemo(() => records.filter((record) => record.status === 'pending').length, [records]);
+  const canSubmitCompliance = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const canFinalizeCompliance = session?.userRole === 'admin';
 
   const handleCreateRecord = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -129,6 +131,7 @@ export default function CompliancePage() {
         title="Statutory filing tracker"
         description="Track PAYE, NSSF, NHIF, and supporting submissions with a visible queue for pending and accepted records."
         actions={
+          canSubmitCompliance ? (
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
             <DialogTrigger asChild>
               <Button className="rounded-2xl px-5">
@@ -178,6 +181,7 @@ export default function CompliancePage() {
               </form>
             </DialogContent>
           </Dialog>
+          ) : null
         }
       />
 
@@ -248,12 +252,24 @@ export default function CompliancePage() {
                 label: 'Actions',
                 render: (_, row) => (
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'submitted')}>
-                      Submit
-                    </Button>
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'accepted')}>
-                      Accept
-                    </Button>
+                    {row.status === 'pending' && canSubmitCompliance ? (
+                      <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'submitted')}>
+                        Submit
+                      </Button>
+                    ) : null}
+                    {row.status === 'submitted' && canFinalizeCompliance ? (
+                      <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'accepted')}>
+                        Accept
+                      </Button>
+                    ) : null}
+                    {row.status === 'submitted' && canFinalizeCompliance ? (
+                      <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'rejected')}>
+                        Reject
+                      </Button>
+                    ) : null}
+                    {!(row.status === 'pending' && canSubmitCompliance) && !(row.status === 'submitted' && canFinalizeCompliance) ? (
+                      <span className="text-xs text-muted-foreground">No action</span>
+                    ) : null}
                   </div>
                 ),
               },

@@ -61,6 +61,7 @@ export default function EmployeesPage() {
 
   const departmentCount = useMemo(() => new Set(employees.map((employee) => employee.department)).size, [employees]);
   const monthlyExposure = useMemo(() => employees.reduce((sum, employee) => sum + employee.baseSalary, 0), [employees]);
+  const canManageEmployees = session?.userRole === 'admin' || session?.userRole === 'manager';
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -145,6 +146,7 @@ export default function EmployeesPage() {
         title="Employees"
         description="Manage employee records, compensation baselines, and payroll-ready profile data from one structured ledger."
         actions={
+          canManageEmployees ? (
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
             <DialogTrigger asChild>
               <Button className="rounded-2xl px-5">
@@ -224,6 +226,7 @@ export default function EmployeesPage() {
               </form>
             </DialogContent>
           </Dialog>
+          ) : null
         }
       />
 

@@ -25,6 +25,7 @@ export default function EmployeeDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [formData, setFormData] = useState<Partial<Employee>>({});
+  const canManageEmployee = session?.userRole === 'admin' || session?.userRole === 'manager';
 
   useEffect(() => {
     let mounted = true;
@@ -175,7 +176,7 @@ export default function EmployeeDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>General Information</CardTitle>
-              {!isEditing && (
+              {canManageEmployee && !isEditing && (
                 <Button size="sm" onClick={() => setIsEditing(true)}>
                   Edit
                 </Button>
@@ -318,17 +319,21 @@ export default function EmployeeDetailPage() {
 
                   <div className="space-y-2">
                     <Label htmlFor="status">Status</Label>
-                    <select
-                      id="status"
-                      value={employee.status}
-                      onChange={handleStatusChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="on_leave">On Leave</option>
-                      <option value="terminated">Terminated</option>
-                    </select>
+                    {canManageEmployee ? (
+                      <select
+                        id="status"
+                        value={employee.status}
+                        onChange={handleStatusChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="on_leave">On Leave</option>
+                        <option value="terminated">Terminated</option>
+                      </select>
+                    ) : (
+                      <p className="py-2 text-gray-900">{getStatusDisplayName(employee.status)}</p>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -337,7 +342,7 @@ export default function EmployeeDetailPage() {
                   </div>
                 </div>
 
-                {isEditing && (
+                {canManageEmployee && isEditing && (
                   <div className="flex gap-3 justify-end pt-4">
                     <Button
                       type="button"
@@ -429,7 +434,7 @@ export default function EmployeeDetailPage() {
                   </div>
                 </div>
 
-                {isEditing && (
+                {canManageEmployee && isEditing && (
                   <div className="flex gap-3 justify-end pt-4">
                     <Button
                       type="button"
