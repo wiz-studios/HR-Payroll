@@ -2,7 +2,7 @@
 
 ## Overview
 
-PayrollKE is a multi-tenant HR and payroll application for Kenyan organizations. It is built on Next.js 16 and Supabase, with production data stored in the PostgreSQL schema `"HR"`.
+PayrollKE is a multi-tenant HR and payroll application for Kenyan organizations. It is built on Next.js 16 and Supabase. The live app currently uses the `"HR"` schema, while the repo now includes an enterprise foundation across `core`, `hr`, `payroll`, and `workflow`.
 
 ## Architecture
 
@@ -28,6 +28,7 @@ PayrollKE is a multi-tenant HR and payroll application for Kenyan organizations.
 - The `"HR"` schema includes helper functions for current company and role resolution.
 - Row Level Security policies restrict reads and writes to authorized company members.
 - Elevated provisioning actions use the Supabase service role from secure server code only.
+- The enterprise schemas are introduced in parallel and seeded from `"HR"` so the current app remains stable during the re-architecture.
 
 ## Database schema
 
@@ -48,6 +49,15 @@ It also sets up:
 - helper SQL functions
 - RLS policies
 - foreign keys for company and payroll relationships
+
+The new migration in [supabase/migrations/0003_enterprise_foundation.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0003_enterprise_foundation.sql) adds the first enterprise domain model:
+
+- `core`: companies, memberships, branches, departments, cost centers, payroll groups
+- `hr`: employee profiles, employment records, compensation records, documents
+- `workflow`: approval definitions, steps, instances, actions
+- `payroll`: rule sets, pay runs, pay run items, validations, payment batches
+
+Current `"HR"` data is seeded into the new structures so the future migration path is incremental instead of destructive.
 
 ## Core workflows
 
@@ -85,15 +95,16 @@ It also sets up:
 
 1. Create `.env.local` from [.env.example](/d:/Wiz%20dev/HR-Payroll/.env.example).
 2. Supply your Supabase project URL, anon key, and service role key.
-3. Apply [supabase/migrations/0001_hr_schema.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0001_hr_schema.sql) to the target database.
+3. Apply [supabase/migrations/0001_hr_schema.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0001_hr_schema.sql), [supabase/migrations/0002_payroll_controls.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0002_payroll_controls.sql), and [supabase/migrations/0003_enterprise_foundation.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0003_enterprise_foundation.sql) in order.
 4. Install dependencies with `pnpm install`.
 5. Start the app with `pnpm dev`.
 
 ## Operational gaps before live payroll
 
-- Add test coverage for payroll calculations, status transitions, and access rules.
-- Add immutable payroll locking and stronger audit logging after approval.
-- Add payslip export and delivery workflows.
+- Move runtime services from `"HR"` to the new multi-schema foundation incrementally.
+- Add effective-dated compensation and employment workflows in application code.
+- Add workflow-driven approvals and payment reconciliation services.
+- Add test coverage for payroll calculations, transitions, and access rules.
 - Validate statutory calculations with a qualified Kenya payroll/compliance specialist.
 - Add backup, monitoring, and incident logging around the Supabase project.
 

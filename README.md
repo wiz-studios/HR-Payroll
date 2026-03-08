@@ -1,6 +1,6 @@
 # PayrollKE
 
-PayrollKE is a Kenya-focused HR and payroll system built with Next.js 16, React 19, TypeScript, and Supabase. The application now uses a dedicated PostgreSQL schema named `"HR"` for production data instead of in-memory demo state.
+PayrollKE is a Kenya-focused HR and payroll system built with Next.js 16, React 19, TypeScript, and Supabase. The current production app runs on the legacy `"HR"` schema, while the repo now also includes the first enterprise foundation for `core`, `hr`, `payroll`, and `workflow` domain schemas.
 
 ## Current scope
 
@@ -24,9 +24,13 @@ PayrollKE is a Kenya-focused HR and payroll system built with Next.js 16, React 
 
 1. Create a Supabase project.
 2. Add the environment values from [.env.example](/d:/Wiz%20dev/HR-Payroll/.env.example) into your local `.env.local` and your deployment platform.
-3. Run the SQL migration in [supabase/migrations/0001_hr_schema.sql](/d:/Wiz%20dev/HR-Payroll/supabase/migrations/0001_hr_schema.sql).
-4. Confirm the `"HR"` schema, tables, functions, triggers, and RLS policies were created.
-5. Ensure your Supabase Auth project is configured for email/password sign-in.
+3. Run the SQL migrations in order:
+   `0001_hr_schema.sql`
+   `0002_payroll_controls.sql`
+   `0003_enterprise_foundation.sql`
+4. Confirm the `"HR"`, `core`, `hr`, `payroll`, and `workflow` schemas were created.
+5. Add the new domain schemas to Supabase API exposed schemas before using them from application code.
+6. Ensure your Supabase Auth project is configured for email/password sign-in.
 
 Required environment variables:
 
@@ -49,7 +53,7 @@ The app runs on `http://localhost:3000`.
 
 ## Data model
 
-The main database objects live in the `"HR"` schema:
+Current live app objects remain in the `"HR"` schema:
 
 - `companies`
 - `company_users`
@@ -59,6 +63,29 @@ The main database objects live in the `"HR"` schema:
 - `leave_requests`
 - `compliance_records`
 - `audit_logs`
+
+Enterprise foundation schemas added in this pass:
+
+- `core.companies`
+- `core.company_memberships`
+- `core.branches`
+- `core.departments`
+- `core.cost_centers`
+- `core.payroll_groups`
+- `hr.employee_profiles`
+- `hr.employment_records`
+- `hr.compensation_records`
+- `hr.employee_documents`
+- `workflow.approval_definitions`
+- `workflow.approval_steps`
+- `workflow.approval_instances`
+- `workflow.approval_actions`
+- `payroll.statutory_rule_sets`
+- `payroll.pay_runs`
+- `payroll.pay_run_items`
+- `payroll.pay_run_validations`
+- `payroll.payment_batches`
+- `payroll.payment_batch_items`
 
 Application-side access is organized through:
 
@@ -74,6 +101,7 @@ Application-side access is organized through:
 - User registration creates both a Supabase Auth user and linked `"HR"` records.
 - Payroll status changes and record writes happen server-side through route handlers under [app/api](/d:/Wiz%20dev/HR-Payroll/app/api).
 - [proxy.ts](/d:/Wiz%20dev/HR-Payroll/proxy.ts) handles session refresh and route protection.
+- The multi-schema enterprise foundation is documented in [docs/ENTERPRISE_ARCHITECTURE.md](/d:/Wiz%20dev/HR-Payroll/docs/ENTERPRISE_ARCHITECTURE.md) and [docs/ENTERPRISE_ROADMAP.md](/d:/Wiz%20dev/HR-Payroll/docs/ENTERPRISE_ROADMAP.md).
 
 ## Next priorities
 
