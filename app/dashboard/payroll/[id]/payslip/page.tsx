@@ -8,6 +8,12 @@ import { formatCurrency, formatDate, getMonthName } from '@/lib/utils-hr';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+function getPayslipDocumentTitle(employeeNumber: string, payrollMonth: string) {
+  const [year, month] = payrollMonth.split('-');
+  const monthLabel = new Date(Number(year), Number(month) - 1, 1).toLocaleString('en-KE', { month: 'long' });
+  return `${employeeNumber}-${monthLabel}-${year}`;
+}
+
 export default function PayslipPage() {
   const router = useRouter();
   const params = useParams();
@@ -54,6 +60,17 @@ export default function PayslipPage() {
       mounted = false;
     };
   }, [detailId]);
+
+  useEffect(() => {
+    if (!employee || !payroll) return;
+
+    const previousTitle = document.title;
+    document.title = getPayslipDocumentTitle(employee.employeeNumber, payroll.payrollMonth);
+
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [employee, payroll]);
 
   if (isLoading) {
     return <div className="text-center py-12">Loading...</div>;
