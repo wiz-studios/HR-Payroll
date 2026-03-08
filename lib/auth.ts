@@ -1,14 +1,14 @@
-import { Company, User, db } from './db-schema';
-import { hashPassword, verifyPassword, generateId } from './utils-hr';
+import { getCompany, getCompanyUserByUserId } from '@/lib/hr/repository';
+import type { User } from '@/lib/hr/types';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 export interface AuthSession {
   userId: string;
   userEmail: string;
   userName: string;
-  userRole: string;
+  userRole: User['role'];
   companyId: string;
   companyName: string;
-  expiresAt: Date;
 }
 
 export interface LoginCredentials {
@@ -31,218 +31,117 @@ export interface RegisterCompanyInput {
   adminLastName: string;
 }
 
-/**
- * Authentication Service
- * Handles user login, registration, and session management
- */
+async function buildAuthSession() {
+  const supabase = getSupabaseBrowserClient();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    return null;
+  }
+
+  const membership = await getCompanyUserByUserId(supabase, user.id);
+  if (!membership) {
+    return null;
+  }
+
+  const company = await getCompany(supabase, membership.companyId);
+  if (!company) {
+    return null;
+  }
+
+  return {
+    userId: user.id,
+    userEmail: user.email ?? membership.email,
+    userName: `${membership.firstName} ${membership.lastName}`.trim(),
+    userRole: membership.role,
+    companyId: company.id,
+    companyName: company.name,
+  } satisfies AuthSession;
+}
+
+async function requestJson<T>(input: RequestInfo, init?: RequestInit) {
+  const response = await fetch(input, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) {
+    throw new Error(payload.error ?? 'Request failed.');
+  }
+
+  return payload;
+}
+
 class AuthService {
-  private sessions: Map<string, AuthSession> = new Map();
-
-  /**
-   * Register a new company with admin user
-   */
-  registerCompany(input: RegisterCompanyInput): { company: Company; user: User; sessionToken: string } {
-    // Check if email already exists
-    if (db.getUserByEmail(input.adminEmail)) {
-      throw new Error('Email already registered');
-    }
-
-    // Create company
-    const company = db.createCompany({
-      id: generateId('cmp'),
-      name: input.companyName,
-      registrationNumber: input.registrationNumber,
-      taxPin: input.taxPin,
-      nssf: input.nssf,
-      nhif: input.nhif,
-      address: input.address,
-      phone: input.phone,
-      email: input.email,
-      country: 'Kenya',
-      currency: 'KES',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+  async registerCompany(input: RegisterCompanyInput) {
+    await requestJson('/api/register-company', {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
 
-    // Create admin user
-    const user = db.createUser({
-      id: generateId('usr'),
+    await this.login({
       email: input.adminEmail,
-      passwordHash: hashPassword(input.adminPassword),
-      firstName: input.adminFirstName,
-      lastName: input.adminLastName,
-      role: 'admin',
-      companyId: company.id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      password: input.adminPassword,
+    });
+  }
+
+  async login(credentials: LoginCredentials) {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password,
     });
 
-    // Create session
-    const sessionToken = this.createSession(user, company);
-
-    return { company, user, sessionToken };
-  }
-
-  /**
-   * Login user with email and password
-   */
-  login(credentials: LoginCredentials): { user: User; company: Company; sessionToken: string } {
-    const user = db.getUserByEmail(credentials.email);
-
-    if (!user) {
-      throw new Error('Invalid email or password');
+    if (error) {
+      throw new Error(error.message);
     }
 
-    if (!verifyPassword(credentials.password, user.passwordHash)) {
-      throw new Error('Invalid email or password');
-    }
-
-    const company = db.getCompany(user.companyId);
-    if (!company) {
-      throw new Error('Company not found');
-    }
-
-    const sessionToken = this.createSession(user, company);
-    return { user, company, sessionToken };
-  }
-
-  /**
-   * Create a session for a user
-   */
-  private createSession(user: User, company: Company): string {
-    const sessionToken = generateId('sess');
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // 24-hour session
-
-    const session: AuthSession = {
-      userId: user.id,
-      userEmail: user.email,
-      userName: `${user.firstName} ${user.lastName}`,
-      userRole: user.role,
-      companyId: company.id,
-      companyName: company.name,
-      expiresAt,
-    };
-
-    this.sessions.set(sessionToken, session);
-    return sessionToken;
-  }
-
-  /**
-   * Get session from token
-   */
-  getSession(token: string): AuthSession | null {
-    const session = this.sessions.get(token);
-
+    const session = await buildAuthSession();
     if (!session) {
-      return null;
-    }
-
-    // Check if session expired
-    if (new Date() > session.expiresAt) {
-      this.sessions.delete(token);
-      return null;
+      throw new Error('Account is authenticated but not linked to an HR workspace.');
     }
 
     return session;
   }
 
-  /**
-   * Logout (invalidate session)
-   */
-  logout(token: string): void {
-    this.sessions.delete(token);
+  async getSession() {
+    return buildAuthSession();
   }
 
-  /**
-   * Verify password strength
-   */
-  static isStrongPassword(password: string): boolean {
-    // At least 8 characters, 1 uppercase, 1 lowercase, 1 number
-    return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password);
+  async logout() {
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      throw new Error(error.message);
+    }
   }
 
-  /**
-   * Change user password
-   */
-  changePassword(userId: string, oldPassword: string, newPassword: string): void {
-    const user = db.getUser(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    if (!verifyPassword(oldPassword, user.passwordHash)) {
-      throw new Error('Current password is incorrect');
-    }
-
-    if (!AuthService.isStrongPassword(newPassword)) {
-      throw new Error('Password must be at least 8 characters with uppercase, lowercase, and numbers');
-    }
-
-    db.updateUser(userId, {
-      passwordHash: hashPassword(newPassword),
-    });
-  }
-
-  /**
-   * Create new user in company
-   */
-  createUser(
-    companyId: string,
+  async createUser(
+    _companyId: string,
     email: string,
     firstName: string,
     lastName: string,
-    role: 'admin' | 'manager' | 'employee'
-  ): User {
-    if (db.getUserByEmail(email)) {
-      throw new Error('Email already registered');
-    }
-
-    // Generate temporary password
-    const tempPassword = this.generateTemporaryPassword();
-
-    return db.createUser({
-      id: generateId('usr'),
-      email,
-      passwordHash: hashPassword(tempPassword),
-      firstName,
-      lastName,
-      role,
-      companyId,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    role: User['role']
+  ) {
+    return requestJson<{ user: User; temporaryPassword: string }>('/api/team-members', {
+      method: 'POST',
+      body: JSON.stringify({ email, firstName, lastName, role }),
     });
   }
 
-  /**
-   * Generate temporary password for new users
-   */
-  private generateTemporaryPassword(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$';
-    let password = '';
-    for (let i = 0; i < 12; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  }
-
-  /**
-   * Reset password (admin only)
-   */
-  resetUserPassword(userId: string): string {
-    const user = db.getUser(userId);
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    const tempPassword = this.generateTemporaryPassword();
-    db.updateUser(userId, {
-      passwordHash: hashPassword(tempPassword),
+  async resetUserPassword(userId: string) {
+    const payload = await requestJson<{ temporaryPassword: string }>(`/api/team-members/${userId}/reset-password`, {
+      method: 'POST',
     });
-
-    return tempPassword;
+    return payload.temporaryPassword;
   }
 }
 
-// Global auth instance
 export const authService = new AuthService();

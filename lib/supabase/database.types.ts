@@ -1,0 +1,302 @@
+export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
+
+export interface Database {
+  HR: {
+    Tables: {
+      companies: {
+        Row: {
+          id: string;
+          name: string;
+          registration_number: string;
+          tax_pin: string;
+          nssf_number: string;
+          nhif_number: string;
+          address: string;
+          phone: string;
+          email: string;
+          country: string;
+          currency: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          registration_number: string;
+          tax_pin: string;
+          nssf_number: string;
+          nhif_number: string;
+          address: string;
+          phone: string;
+          email: string;
+          country?: string;
+          currency?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['companies']['Insert']>;
+        Relationships: [];
+      };
+      company_users: {
+        Row: {
+          id: string;
+          company_id: string;
+          user_id: string;
+          email: string;
+          first_name: string;
+          last_name: string;
+          role: 'admin' | 'manager' | 'employee';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          user_id: string;
+          email: string;
+          first_name: string;
+          last_name: string;
+          role: 'admin' | 'manager' | 'employee';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['company_users']['Insert']>;
+        Relationships: [];
+      };
+      employees: {
+        Row: {
+          id: string;
+          company_id: string;
+          employee_number: string;
+          first_name: string;
+          last_name: string;
+          email: string;
+          phone_number: string;
+          id_number: string;
+          tax_pin: string;
+          account_number: string;
+          bank_code: string;
+          bank_name: string;
+          department: string;
+          position: string;
+          joining_date: string;
+          status: 'active' | 'inactive' | 'on_leave' | 'terminated';
+          employment_type: 'permanent' | 'contract' | 'casual';
+          base_salary: number;
+          salary_frequency: 'monthly' | 'weekly' | 'daily';
+          allowances: Json;
+          deductions: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          employee_number: string;
+          first_name: string;
+          last_name: string;
+          email: string;
+          phone_number: string;
+          id_number: string;
+          tax_pin: string;
+          account_number: string;
+          bank_code: string;
+          bank_name: string;
+          department: string;
+          position: string;
+          joining_date: string;
+          status?: 'active' | 'inactive' | 'on_leave' | 'terminated';
+          employment_type: 'permanent' | 'contract' | 'casual';
+          base_salary: number;
+          salary_frequency?: 'monthly' | 'weekly' | 'daily';
+          allowances?: Json;
+          deductions?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['employees']['Insert']>;
+        Relationships: [];
+      };
+      payroll_runs: {
+        Row: {
+          id: string;
+          company_id: string;
+          payroll_month: string;
+          payroll_cycle: 'monthly' | 'weekly' | 'biweekly';
+          status: 'draft' | 'pending_approval' | 'approved' | 'processed' | 'paid';
+          approved_at: string | null;
+          approved_by: string | null;
+          processed_at: string | null;
+          processed_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          payroll_month: string;
+          payroll_cycle?: 'monthly' | 'weekly' | 'biweekly';
+          status?: 'draft' | 'pending_approval' | 'approved' | 'processed' | 'paid';
+          approved_at?: string | null;
+          approved_by?: string | null;
+          processed_at?: string | null;
+          processed_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['payroll_runs']['Insert']>;
+        Relationships: [];
+      };
+      payroll_details: {
+        Row: {
+          id: string;
+          payroll_id: string;
+          employee_id: string;
+          company_id: string;
+          basic_salary: number;
+          allowances_total: number;
+          allowance_breakdown: Json;
+          gross_pay: number;
+          nssf_amount: number;
+          nhif_amount: number;
+          income_tax_amount: number;
+          other_deductions_total: number;
+          other_deductions_breakdown: Json;
+          total_deductions: number;
+          net_pay: number;
+          payment_status: 'pending' | 'processed' | 'paid' | 'failed';
+          payment_method: 'bank_transfer' | 'm_pesa' | 'cash';
+          payment_date: string | null;
+          mpesa_reference: string | null;
+          bank_transfer_reference: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          payroll_id: string;
+          employee_id: string;
+          company_id: string;
+          basic_salary: number;
+          allowances_total: number;
+          allowance_breakdown?: Json;
+          gross_pay: number;
+          nssf_amount: number;
+          nhif_amount: number;
+          income_tax_amount: number;
+          other_deductions_total: number;
+          other_deductions_breakdown?: Json;
+          total_deductions: number;
+          net_pay: number;
+          payment_status?: 'pending' | 'processed' | 'paid' | 'failed';
+          payment_method?: 'bank_transfer' | 'm_pesa' | 'cash';
+          payment_date?: string | null;
+          mpesa_reference?: string | null;
+          bank_transfer_reference?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['payroll_details']['Insert']>;
+        Relationships: [];
+      };
+      leave_requests: {
+        Row: {
+          id: string;
+          company_id: string;
+          employee_id: string;
+          leave_type: string;
+          start_date: string;
+          end_date: string;
+          days: number;
+          status: 'pending' | 'approved' | 'rejected';
+          reason: string;
+          approved_by: string | null;
+          approved_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          employee_id: string;
+          leave_type: string;
+          start_date: string;
+          end_date: string;
+          days: number;
+          status?: 'pending' | 'approved' | 'rejected';
+          reason: string;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['leave_requests']['Insert']>;
+        Relationships: [];
+      };
+      compliance_records: {
+        Row: {
+          id: string;
+          company_id: string;
+          record_type: 'kra_filing' | 'nssf_filing' | 'nhif_filing' | 'audit_trail';
+          authority: string;
+          period: string;
+          status: 'pending' | 'submitted' | 'accepted' | 'rejected';
+          submission_date: string | null;
+          response_date: string | null;
+          details: Json;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          record_type: 'kra_filing' | 'nssf_filing' | 'nhif_filing' | 'audit_trail';
+          authority: string;
+          period: string;
+          status?: 'pending' | 'submitted' | 'accepted' | 'rejected';
+          submission_date?: string | null;
+          response_date?: string | null;
+          details?: Json;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['compliance_records']['Insert']>;
+        Relationships: [];
+      };
+      audit_logs: {
+        Row: {
+          id: string;
+          company_id: string;
+          actor_user_id: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string;
+          before: Json | null;
+          after: Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          actor_user_id?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string;
+          before?: Json | null;
+          after?: Json | null;
+          created_at?: string;
+        };
+        Update: Partial<Database['HR']['Tables']['audit_logs']['Insert']>;
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+}

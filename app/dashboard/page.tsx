@@ -26,28 +26,37 @@ export default function DashboardPage() {
     pendingApprovals: 0,
     totalGrossSalaries: 0,
   });
+  const [payrolls, setPayrolls] = useState<Awaited<ReturnType<typeof db.getPayrollsByCompany>>>([]);
+  const [employees, setEmployees] = useState<Awaited<ReturnType<typeof db.getEmployeesByCompany>>>([]);
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
+    let mounted = true;
 
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
 
-    if (!currentSession) return;
+      const employees = await db.getEmployeesByCompany(currentSession.companyId);
+      const payrolls = await db.getPayrollsByCompany(currentSession.companyId);
+      const activePayrolls = payrolls.filter((payroll) => ['draft', 'pending_approval', 'approved'].includes(payroll.status));
+      const pendingApprovals = payrolls.filter((payroll) => payroll.status === 'pending_approval');
+      const payrollDetailGroups = await Promise.all(activePayrolls.map((payroll) => db.getPayrollDetailsByPayroll(payroll.id)));
+      const payrollDetails = payrollDetailGroups.flat();
 
-    const employees = db.getEmployeesByCompany(currentSession.companyId);
-    const payrolls = db.getPayrollsByCompany(currentSession.companyId);
-    const activePayrolls = payrolls.filter((payroll) => ['draft', 'pending_approval', 'approved'].includes(payroll.status));
-    const pendingApprovals = payrolls.filter((payroll) => payroll.status === 'pending_approval');
-    const payrollDetails = activePayrolls.flatMap((payroll) => db.getPayrollDetailsByPayroll(payroll.id));
+      if (!mounted) return;
+      setStats({
+        totalEmployees: employees.length,
+        activePayrolls: activePayrolls.length,
+        pendingApprovals: pendingApprovals.length,
+        totalGrossSalaries: payrollDetails.reduce((sum, detail) => sum + detail.grossPay, 0),
+      });
+    };
 
-    setStats({
-      totalEmployees: employees.length,
-      activePayrolls: activePayrolls.length,
-      pendingApprovals: pendingApprovals.length,
-      totalGrossSalaries: payrollDetails.reduce((sum, detail) => sum + detail.grossPay, 0),
-    });
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const todayLabel = useMemo(
@@ -61,13 +70,29 @@ export default function DashboardPage() {
     []
   );
 
+  useEffect(() => {
+    let mounted = true;
+    const loadCollections = async () => {
+      if (!session) return;
+      const [payrollData, employeeData] = await Promise.all([
+        db.getPayrollsByCompany(session.companyId),
+        db.getEmployeesByCompany(session.companyId),
+      ]);
+      if (!mounted) return;
+      setPayrolls(payrollData);
+      setEmployees(employeeData);
+    };
+    void loadCollections();
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
+
   if (!session) {
     return null;
   }
 
-  const payrolls = db.getPayrollsByCompany(session.companyId);
   const latestPayroll = [...payrolls].sort((a, b) => b.payrollMonth.localeCompare(a.payrollMonth))[0];
-  const employees = db.getEmployeesByCompany(session.companyId);
   const departmentSummary = Object.entries(
     employees.reduce<Record<string, number>>((acc, employee) => {
       acc[employee.department] = (acc[employee.department] ?? 0) + 1;

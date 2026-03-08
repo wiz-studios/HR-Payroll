@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BriefcaseBusiness, CalendarDays, Plus } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
-import { db, Employee } from '@/lib/db-schema';
+import { db, Employee, LeaveRequest } from '@/lib/db-schema';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
 import { PageHeader } from '@/components/app/page-header';
@@ -56,33 +56,43 @@ export default function LeavesPage() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
 
-    if (!currentSession) return;
+      const companyEmployees = await db.getEmployeesByCompany(currentSession.companyId);
+      const leaveRequests = await db.getLeaveRequestsByCompany(currentSession.companyId);
+      if (!mounted) return;
 
-    const companyEmployees = db.getEmployeesByCompany(currentSession.companyId);
-    setEmployees(companyEmployees);
-    setLeaves(
-      companyEmployees.slice(0, 2).map((employee, index) => ({
-        id: `leave_${index + 1}`,
-        employeeId: employee.id,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        leaveType: index === 0 ? 'Annual' : 'Sick',
-        startDate: '2026-03-18',
-        endDate: '2026-03-21',
-        days: 4,
-        status: index === 0 ? 'approved' : 'pending',
-        reason: index === 0 ? 'Family travel' : 'Medical recovery',
-      }))
-    );
+      setEmployees(companyEmployees);
+      setLeaves(
+        leaveRequests.map((leave) => {
+          const employee = companyEmployees.find((item) => item.id === leave.employeeId);
+          return {
+            id: leave.id,
+            employeeId: leave.employeeId,
+            employeeName: employee ? `${employee.firstName} ${employee.lastName}` : 'Unknown Employee',
+            leaveType: leave.leaveType,
+            startDate: leave.startDate,
+            endDate: leave.endDate,
+            days: leave.days,
+            status: leave.status,
+            reason: leave.reason,
+          };
+        })
+      );
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const pendingLeaves = useMemo(() => leaves.filter((leave) => leave.status === 'pending').length, [leaves]);
 
-  const handleSubmitLeave = (event: React.FormEvent) => {
+  const handleSubmitLeave = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     setSuccess('');
@@ -97,17 +107,36 @@ export default function LeavesPage() {
     const end = new Date(formData.endDate);
     const days = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
-    setLeaves((current) => [
-      {
-        id: `leave_${Date.now()}`,
+    const response = await fetch('/api/leave-requests', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         employeeId: employee.id,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
         leaveType: formData.leaveType,
         startDate: formData.startDate,
         endDate: formData.endDate,
         days,
-        status: 'pending',
         reason: formData.reason,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to create leave request.');
+      return;
+    }
+
+    const leaveRequest = payload.leaveRequest as LeaveRequest;
+    setLeaves((current) => [
+      {
+        id: leaveRequest.id,
+        employeeId: leaveRequest.employeeId,
+        employeeName: `${employee.firstName} ${employee.lastName}`,
+        leaveType: leaveRequest.leaveType,
+        startDate: leaveRequest.startDate,
+        endDate: leaveRequest.endDate,
+        days: leaveRequest.days,
+        status: leaveRequest.status,
+        reason: leaveRequest.reason,
       },
       ...current,
     ]);
@@ -116,7 +145,18 @@ export default function LeavesPage() {
     setSuccess('Leave request submitted.');
   };
 
-  const updateStatus = (leaveId: string, status: Leave['status']) => {
+  const updateStatus = async (leaveId: string, status: Leave['status']) => {
+    const response = await fetch(`/api/leave-requests/${leaveId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to update leave request.');
+      return;
+    }
+
     setLeaves((current) => current.map((leave) => (leave.id === leaveId ? { ...leave, status } : leave)));
   };
 
@@ -280,10 +320,10 @@ export default function LeavesPage() {
               label: 'Action',
               render: (_, row) => (
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => updateStatus(row.id, 'approved')}>
+                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'approved')}>
                     Approve
                   </Button>
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => updateStatus(row.id, 'rejected')}>
+                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'rejected')}>
                     Reject
                   </Button>
                 </div>

@@ -17,27 +17,42 @@ export default function PayslipPage() {
   const [detail, setDetail] = useState<PayrollDetail | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [payroll, setPayroll] = useState<Payroll | null>(null);
+  const [companyTaxPin, setCompanyTaxPin] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (token) {
-      const sess = authService.getSession(token);
+    let mounted = true;
+    const load = async () => {
+      const sess = await authService.getSession();
+      if (!mounted) return;
       setSession(sess);
-      if (sess) {
-        const d = db.getPayrollDetail(detailId);
-        if (d && d.companyId === sess.companyId) {
-          setDetail(d);
-
-          const emp = db.getEmployee(d.employeeId);
-          setEmployee(emp || null);
-
-          const p = db.getPayroll(d.payrollId);
-          setPayroll(p || null);
-        }
+      if (!sess) {
+        setIsLoading(false);
+        return;
       }
-    }
-    setIsLoading(false);
+
+      const d = await db.getPayrollDetail(detailId);
+      if (d && d.companyId === sess.companyId) {
+        setDetail(d);
+
+        const [emp, p, company] = await Promise.all([
+          db.getEmployee(d.employeeId),
+          db.getPayroll(d.payrollId),
+          db.getCompany(sess.companyId),
+        ]);
+        if (!mounted) return;
+        setEmployee(emp || null);
+        setPayroll(p || null);
+        setCompanyTaxPin(company?.taxPin ?? null);
+      }
+
+      setIsLoading(false);
+    };
+
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, [detailId]);
 
   if (isLoading) {
@@ -75,7 +90,7 @@ export default function PayslipPage() {
           <div className="mb-8 pb-8 border-b border-gray-200">
             <h3 className="font-bold text-lg mb-4">{session.companyName}</h3>
             <div className="text-sm text-gray-600">
-              <p>Tax PIN: {db.getCompany(session.companyId)?.taxPin}</p>
+              <p>Tax PIN: {companyTaxPin ?? '-'}</p>
             </div>
           </div>
 

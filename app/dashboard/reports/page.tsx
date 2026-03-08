@@ -25,19 +25,16 @@ export default function ReportsPage() {
   const [rows, setRows] = useState<ReportRow[]>([]);
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
 
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
-
-    if (!currentSession) return;
-
-    const payrolls = db.getPayrollsByCompany(currentSession.companyId);
-    const reportRows = payrolls
+      const payrolls = await db.getPayrollsByCompany(currentSession.companyId);
+      const reportRows = await Promise.all(payrolls
       .map((payroll) => {
-        const details = db.getPayrollDetailsByPayroll(payroll.id);
-        return {
+        return db.getPayrollDetailsByPayroll(payroll.id).then((details) => ({
           id: payroll.id,
           month: payroll.payrollMonth,
           totalEmployees: details.length,
@@ -46,11 +43,15 @@ export default function ReportsPage() {
           totalNHIF: details.reduce((sum, detail) => sum + detail.nhifAmount, 0),
           totalTax: details.reduce((sum, detail) => sum + detail.incomeTaxAmount, 0),
           totalNetPay: details.reduce((sum, detail) => sum + detail.netPay, 0),
-        };
-      })
-      .sort((a, b) => b.month.localeCompare(a.month));
-
-    setRows(reportRows);
+        }));
+      }));
+      if (!mounted) return;
+      setRows(reportRows.sort((a, b) => b.month.localeCompare(a.month)));
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const totals = useMemo(

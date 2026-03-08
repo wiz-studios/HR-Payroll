@@ -39,56 +39,73 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
-    if (!currentSession) return;
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
 
-    const currentCompany = db.getCompany(currentSession.companyId) ?? null;
-    setCompany(currentCompany);
-    setCompanyForm(currentCompany ?? {});
-    setUsers(db.getUsersByCompany(currentSession.companyId));
+      const [currentCompany, companyUsers] = await Promise.all([
+        db.getCompany(currentSession.companyId),
+        db.getUsersByCompany(currentSession.companyId),
+      ]);
+      if (!mounted) return;
+      setCompany(currentCompany);
+      setCompanyForm(currentCompany ?? {});
+      setUsers(companyUsers);
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const handleSaveCompany = (event: React.FormEvent) => {
+  const handleSaveCompany = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     if (!company) return;
 
-    const updated = db.updateCompany(company.id, companyForm);
-    if (updated) {
-      setCompany(updated);
-      setCompanyForm(updated);
-      setIsEditingCompany(false);
-      setMessage('Company profile updated.');
+    const response = await fetch('/api/company', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(companyForm),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to update company.');
+      return;
     }
+
+    setCompany(payload.company);
+    setCompanyForm(payload.company);
+    setIsEditingCompany(false);
+    setMessage('Company profile updated.');
   };
 
-  const handleAddUser = (event: React.FormEvent) => {
+  const handleAddUser = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     if (!session) return;
 
     try {
-      const newUser = authService.createUser(
+      const result = await authService.createUser(
         session.companyId,
         userForm.email,
         userForm.firstName,
         userForm.lastName,
         userForm.role
       );
-      setUsers((current) => [...current, newUser]);
+      setUsers((current) => [...current, result.user]);
       setIsAddingUser(false);
       setUserForm({ email: '', firstName: '', lastName: '', role: 'manager' });
-      setMessage('Team member added. A temporary password is available in the auth service.');
+      setMessage(`Team member added. Temporary password: ${result.temporaryPassword}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add team member.');
     }
   };
 
-  const handleResetPassword = (userId: string) => {
-    const tempPassword = authService.resetUserPassword(userId);
+  const handleResetPassword = async (userId: string) => {
+    const tempPassword = await authService.resetUserPassword(userId);
     setMessage(`Temporary password: ${tempPassword}`);
   };
 
@@ -284,7 +301,7 @@ export default function SettingsPage() {
                 key: 'id',
                 label: 'Security',
                 render: (_, user) => (
-                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => handleResetPassword(user.id)}>
+                  <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void handleResetPassword(user.id)}>
                     Reset password
                   </Button>
                 ),

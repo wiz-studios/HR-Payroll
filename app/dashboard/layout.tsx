@@ -147,21 +147,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) {
-      router.push('/');
-      return;
-    }
+    let mounted = true;
 
-    const currentSession = authService.getSession(token);
-    if (!currentSession) {
-      localStorage.removeItem('sessionToken');
-      router.push('/');
-      return;
-    }
+    const loadSession = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted) return;
 
-    setSession(currentSession);
-    setIsLoading(false);
+      if (!currentSession) {
+        router.push('/');
+        return;
+      }
+
+      setSession(currentSession);
+      setIsLoading(false);
+    };
+
+    void loadSession();
+
+    return () => {
+      mounted = false;
+    };
   }, [router]);
 
   const activeItem = useMemo(
@@ -169,12 +174,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     [pathname]
   );
 
-  const handleLogout = () => {
-    const token = localStorage.getItem('sessionToken');
-    if (token) {
-      authService.logout(token);
-      localStorage.removeItem('sessionToken');
-    }
+  const handleLogout = async () => {
+    await authService.logout();
     router.push('/');
   };
 

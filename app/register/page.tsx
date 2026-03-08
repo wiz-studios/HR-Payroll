@@ -44,8 +44,7 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
-      const { sessionToken } = authService.registerCompany(formData);
-      localStorage.setItem('sessionToken', sessionToken);
+      await authService.registerCompany(formData);
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -140,7 +139,7 @@ export default function RegisterPage() {
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {[
-                    ['companyName', 'Company name', 'TechCorp Kenya Ltd'],
+                    ['companyName', 'Company name', 'Acme HR Ltd'],
                     ['registrationNumber', 'Registration number', 'PVT/REG/2026/001'],
                     ['taxPin', 'KRA PIN', 'A000000001Z'],
                     ['nssf', 'NSSF number', 'NSSF/2026/001'],
@@ -151,7 +150,7 @@ export default function RegisterPage() {
                     ['adminFirstName', 'Admin first name', 'Amina'],
                     ['adminLastName', 'Admin last name', 'Otieno'],
                     ['adminEmail', 'Admin email', 'admin@company.com'],
-                    ['adminPassword', 'Admin password', 'AdminPass123'],
+                    ['adminPassword', 'Admin password', 'Create a secure password'],
                   ].map(([name, label, placeholder]) => (
                     <div key={name} className={name === 'address' ? 'md:col-span-2' : ''}>
                       <Label htmlFor={name}>{label}</Label>

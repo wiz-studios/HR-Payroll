@@ -44,14 +44,19 @@ export default function EmployeesPage() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
-
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
-    if (currentSession) {
-      setEmployees(db.getEmployeesByCompany(currentSession.companyId));
-    }
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
+      const employeeRows = await db.getEmployeesByCompany(currentSession.companyId);
+      if (!mounted) return;
+      setEmployees(employeeRows);
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const departmentCount = useMemo(() => new Set(employees.map((employee) => employee.department)).size, [employees]);
@@ -61,7 +66,7 @@ export default function EmployeesPage() {
     setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));
   };
 
-  const handleAddEmployee = (event: React.FormEvent) => {
+  const handleAddEmployee = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     if (!session) return;
@@ -72,41 +77,45 @@ export default function EmployeesPage() {
       return;
     }
 
-    const newEmployee: Employee = {
-      id: `emp_${Date.now()}`,
-      companyId: session.companyId,
-      employeeNumber: generateEmployeeNumber(session.companyId, employees.length + 1),
-      firstName: formData.firstName,
-      lastName: formData.lastName,
-      email: formData.email,
-      phoneNumber: formData.phoneNumber,
-      idNumber: formData.idNumber,
-      taxPin: formData.taxPin,
-      accountNumber: formData.accountNumber,
-      bankCode: formData.bankCode,
-      bankName: formData.bankName,
-      department: formData.department,
-      position: formData.position,
-      joiningDate: new Date(),
-      status: 'active',
-      employmentType: formData.employmentType,
-      baseSalary,
-      salaryFrequency: 'monthly',
-      allowances: {
-        housing: 0,
-        transport: 0,
-        medical: 0,
-      },
-      deductions: {
-        nssf: 0,
-        nhif: 0,
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const response = await fetch('/api/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employeeNumber: generateEmployeeNumber(session.companyId, employees.length + 1),
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        idNumber: formData.idNumber,
+        taxPin: formData.taxPin,
+        accountNumber: formData.accountNumber,
+        bankCode: formData.bankCode,
+        bankName: formData.bankName,
+        department: formData.department,
+        position: formData.position,
+        joiningDate: new Date().toISOString().slice(0, 10),
+        status: 'active',
+        employmentType: formData.employmentType,
+        baseSalary,
+        salaryFrequency: 'monthly',
+        allowances: {
+          housing: 0,
+          transport: 0,
+          medical: 0,
+        },
+        deductions: {
+          nssf: 0,
+          nhif: 0,
+        },
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to create employee.');
+      return;
+    }
 
-    db.createEmployee(newEmployee);
-    setEmployees((current) => [...current, newEmployee]);
+    setEmployees((current) => [payload.employee as Employee, ...current]);
     setFormData({
       firstName: '',
       lastName: '',

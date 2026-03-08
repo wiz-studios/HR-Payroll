@@ -1,349 +1,251 @@
-// Multi-tenant Database Schema for Kenya HR + Payroll System
-// All data is isolated by company_id to support multiple companies
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
+import type { Database } from '@/lib/supabase/database.types';
+import {
+  getCompany,
+  getCompanyUserByUserId,
+  getComplianceRecordsByCompany,
+  getEmployee,
+  getEmployeesByCompany,
+  getLeaveRequestsByCompany,
+  getPayroll,
+  getPayrollByMonth,
+  getPayrollDetail,
+  getPayrollDetailsByPayroll,
+  getPayrollsByCompany,
+  getUsersByCompany,
+  mapCompany,
+  mapComplianceRecord,
+  mapEmployee,
+  mapLeaveRequest,
+  mapPayroll,
+  mapPayrollDetail,
+  mapUser,
+} from '@/lib/hr/repository';
+export type {
+  AuditLog,
+  Company,
+  ComplianceRecord,
+  Employee,
+  LeaveRequest,
+  Payroll,
+  PayrollDetail,
+  User,
+} from '@/lib/hr/types';
 
-export interface Company {
-  id: string;
-  name: string;
-  registrationNumber: string; // KRA registration number
-  taxPin: string; // Tax PIN
-  nssf: string; // NSSF employer registration
-  nhif: string; // NHIF employer registration
-  address: string;
-  phone: string;
-  email: string;
-  country: string; // 'Kenya'
-  currency: string; // 'KES'
-  createdAt: Date;
-  updatedAt: Date;
+const HR_SCHEMA = 'HR';
+
+function browserClient() {
+  return getSupabaseBrowserClient();
 }
 
-export interface User {
-  id: string;
-  email: string;
-  passwordHash: string;
-  firstName: string;
-  lastName: string;
-  role: 'admin' | 'manager' | 'employee';
-  companyId: string;
-  createdAt: Date;
-  updatedAt: Date;
+function nowIso() {
+  return new Date().toISOString();
 }
 
-export interface Employee {
-  id: string;
-  companyId: string;
-  employeeNumber: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phoneNumber: string;
-  idNumber: string; // National ID or Passport
-  taxPin: string; // Individual tax PIN
-  accountNumber: string; // Bank account
-  bankCode: string; // Bank code for M-Pesa routing
-  bankName: string;
-  department: string;
-  position: string;
-  joiningDate: Date;
-  status: 'active' | 'inactive' | 'on_leave' | 'terminated';
-  employmentType: 'permanent' | 'contract' | 'casual';
-  baseSalary: number; // In KES
-  salaryFrequency: 'monthly' | 'weekly' | 'daily';
-  allowances: {
-    housing?: number;
-    transport?: number;
-    medical?: number;
-    meal?: number;
-    other?: Record<string, number>;
-  };
-  deductions: {
-    nssf?: number;
-    nhif?: number;
-    unionFees?: number;
-    loans?: number;
-    other?: Record<string, number>;
-  };
-  createdAt: Date;
-  updatedAt: Date;
-}
+export const db = {
+  async getCompany(id: string) {
+    return getCompany(browserClient(), id);
+  },
 
-export interface Payroll {
-  id: string;
-  companyId: string;
-  payrollMonth: string; // YYYY-MM format
-  payrollCycle: 'monthly' | 'weekly' | 'biweekly';
-  status: 'draft' | 'pending_approval' | 'approved' | 'processed' | 'paid';
-  createdAt: Date;
-  updatedAt: Date;
-  approvedAt?: Date;
-  approvedBy?: string; // User ID
-  processedAt?: Date;
-  processedBy?: string; // User ID
-}
+  async getUserById(userId: string) {
+    const membership = await getCompanyUserByUserId(browserClient(), userId);
+    return membership;
+  },
 
-export interface PayrollDetail {
-  id: string;
-  payrollId: string;
-  employeeId: string;
-  companyId: string;
-  
-  // Earnings
-  basicSalary: number;
-  allowancesTotal: number;
-  allowanceBreakdown: Record<string, number>;
-  grossPay: number;
-  
-  // Deductions
-  nssfAmount: number;
-  nhifAmount: number;
-  incomeTaxAmount: number;
-  otherDeductionsTotal: number;
-  otherDeductionsBreakdown: Record<string, number>;
-  totalDeductions: number;
-  
-  // Net
-  netPay: number;
-  
-  // Status
-  paymentStatus: 'pending' | 'processed' | 'paid' | 'failed';
-  paymentMethod: 'bank_transfer' | 'm_pesa' | 'cash';
-  paymentDate?: Date;
-  mpesaReference?: string;
-  bankTransferReference?: string;
-  
-  createdAt: Date;
-  updatedAt: Date;
-}
+  async getUsersByCompany(companyId: string) {
+    return getUsersByCompany(browserClient(), companyId);
+  },
 
-export interface TaxBracket {
-  id: string;
-  companyId: string;
-  year: number;
-  taxYear: string; // e.g., "2024/2025"
-  brackets: {
-    min: number;
-    max: number;
-    rate: number;
-    reliefAmount?: number;
-  }[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ComplianceRecord {
-  id: string;
-  companyId: string;
-  recordType: 'kra_filing' | 'nssf_filing' | 'nhif_filing' | 'audit_trail';
-  period: string; // YYYY-MM or YYYY-Q#
-  status: 'pending' | 'submitted' | 'accepted' | 'rejected';
-  submissionDate?: Date;
-  responseDate?: Date;
-  details: Record<string, any>;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface AuditLog {
-  id: string;
-  companyId: string;
-  userId: string;
-  action: string;
-  entityType: string;
-  entityId: string;
-  changes: {
-    before: Record<string, any>;
-    after: Record<string, any>;
-  };
-  timestamp: Date;
-}
-
-// In-memory database for MVP
-export class InMemoryDatabase {
-  private companies: Map<string, Company> = new Map();
-  private users: Map<string, User> = new Map();
-  private employees: Map<string, Employee> = new Map();
-  private payrolls: Map<string, Payroll> = new Map();
-  private payrollDetails: Map<string, PayrollDetail> = new Map();
-  private taxBrackets: Map<string, TaxBracket> = new Map();
-  private complianceRecords: Map<string, ComplianceRecord> = new Map();
-  private auditLogs: Map<string, AuditLog> = new Map();
-
-  // Company operations
-  createCompany(company: Company): Company {
-    this.companies.set(company.id, company);
-    return company;
-  }
-
-  getCompany(id: string): Company | undefined {
-    return this.companies.get(id);
-  }
-
-  getAllCompanies(): Company[] {
-    return Array.from(this.companies.values());
-  }
-
-  updateCompany(id: string, updates: Partial<Company>): Company | undefined {
-    const company = this.companies.get(id);
-    if (!company) return undefined;
-    const updated = { ...company, ...updates, updatedAt: new Date() };
-    this.companies.set(id, updated);
-    return updated;
-  }
-
-  // User operations
-  createUser(user: User): User {
-    this.users.set(user.id, user);
-    return user;
-  }
-
-  getUserByEmail(email: string): User | undefined {
-    return Array.from(this.users.values()).find(u => u.email === email);
-  }
-
-  getUser(id: string): User | undefined {
-    return this.users.get(id);
-  }
-
-  getUsersByCompany(companyId: string): User[] {
-    return Array.from(this.users.values()).filter(u => u.companyId === companyId);
-  }
-
-  updateUser(id: string, updates: Partial<User>): User | undefined {
-    const user = this.users.get(id);
-    if (!user) return undefined;
-    const updated = { ...user, ...updates, updatedAt: new Date() };
-    this.users.set(id, updated);
-    return updated;
-  }
-
-  // Employee operations
-  createEmployee(employee: Employee): Employee {
-    this.employees.set(employee.id, employee);
-    return employee;
-  }
-
-  getEmployee(id: string): Employee | undefined {
-    return this.employees.get(id);
-  }
-
-  getEmployeesByCompany(companyId: string): Employee[] {
-    return Array.from(this.employees.values()).filter(e => e.companyId === companyId);
-  }
-
-  getActiveEmployeesByCompany(companyId: string): Employee[] {
-    return this.getEmployeesByCompany(companyId).filter(e => e.status === 'active');
-  }
-
-  updateEmployee(id: string, updates: Partial<Employee>): Employee | undefined {
-    const employee = this.employees.get(id);
-    if (!employee) return undefined;
-    const updated = { ...employee, ...updates, updatedAt: new Date() };
-    this.employees.set(id, updated);
-    return updated;
-  }
-
-  // Payroll operations
-  createPayroll(payroll: Payroll): Payroll {
-    this.payrolls.set(payroll.id, payroll);
-    return payroll;
-  }
-
-  getPayroll(id: string): Payroll | undefined {
-    return this.payrolls.get(id);
-  }
-
-  getPayrollsByCompany(companyId: string): Payroll[] {
-    return Array.from(this.payrolls.values()).filter(p => p.companyId === companyId);
-  }
-
-  getPayrollByMonth(companyId: string, month: string): Payroll | undefined {
-    return Array.from(this.payrolls.values()).find(
-      p => p.companyId === companyId && p.payrollMonth === month
-    );
-  }
-
-  updatePayroll(id: string, updates: Partial<Payroll>): Payroll | undefined {
-    const payroll = this.payrolls.get(id);
-    if (!payroll) return undefined;
-    const updated = { ...payroll, ...updates, updatedAt: new Date() };
-    this.payrolls.set(id, updated);
-    return updated;
-  }
-
-  // Payroll Detail operations
-  createPayrollDetail(detail: PayrollDetail): PayrollDetail {
-    this.payrollDetails.set(detail.id, detail);
-    return detail;
-  }
-
-  getPayrollDetail(id: string): PayrollDetail | undefined {
-    return this.payrollDetails.get(id);
-  }
-
-  getPayrollDetailsByPayroll(payrollId: string): PayrollDetail[] {
-    return Array.from(this.payrollDetails.values()).filter(d => d.payrollId === payrollId);
-  }
-
-  getPayrollDetailByEmployeeAndPayroll(employeeId: string, payrollId: string): PayrollDetail | undefined {
-    return Array.from(this.payrollDetails.values()).find(
-      d => d.employeeId === employeeId && d.payrollId === payrollId
-    );
-  }
-
-  updatePayrollDetail(id: string, updates: Partial<PayrollDetail>): PayrollDetail | undefined {
-    const detail = this.payrollDetails.get(id);
-    if (!detail) return undefined;
-    const updated = { ...detail, ...updates, updatedAt: new Date() };
-    this.payrollDetails.set(id, updated);
-    return updated;
-  }
-
-  // Tax Bracket operations
-  createTaxBracket(bracket: TaxBracket): TaxBracket {
-    this.taxBrackets.set(bracket.id, bracket);
-    return bracket;
-  }
-
-  getTaxBracketByYear(companyId: string, year: number): TaxBracket | undefined {
-    return Array.from(this.taxBrackets.values()).find(
-      t => t.companyId === companyId && t.year === year
-    );
-  }
-
-  // Compliance Record operations
-  createComplianceRecord(record: ComplianceRecord): ComplianceRecord {
-    this.complianceRecords.set(record.id, record);
-    return record;
-  }
-
-  getComplianceRecordsByCompany(companyId: string): ComplianceRecord[] {
-    return Array.from(this.complianceRecords.values()).filter(r => r.companyId === companyId);
-  }
-
-  // Audit Log operations
-  logAudit(log: AuditLog): AuditLog {
-    this.auditLogs.set(log.id, log);
-    return log;
-  }
-
-  getAuditLogsByCompany(companyId: string): AuditLog[] {
-    return Array.from(this.auditLogs.values()).filter(l => l.companyId === companyId);
-  }
-
-  // Data export for testing
-  export() {
-    return {
-      companies: Array.from(this.companies.values()),
-      users: Array.from(this.users.values()),
-      employees: Array.from(this.employees.values()),
-      payrolls: Array.from(this.payrolls.values()),
-      payrollDetails: Array.from(this.payrollDetails.values()),
-      taxBrackets: Array.from(this.taxBrackets.values()),
-      complianceRecords: Array.from(this.complianceRecords.values()),
-      auditLogs: Array.from(this.auditLogs.values()),
+  async updateCompany(id: string, updates: Partial<Database['HR']['Tables']['companies']['Update']> & Record<string, unknown>) {
+    const payload: Database['HR']['Tables']['companies']['Update'] = {
+      name: updates.name as string | undefined,
+      registration_number: updates.registrationNumber as string | undefined,
+      tax_pin: updates.taxPin as string | undefined,
+      nssf_number: updates.nssf as string | undefined,
+      nhif_number: updates.nhif as string | undefined,
+      address: updates.address as string | undefined,
+      phone: updates.phone as string | undefined,
+      email: updates.email as string | undefined,
+      updated_at: nowIso(),
     };
-  }
-}
 
-// Global database instance
-export const db = new InMemoryDatabase();
+    const { data, error } = await browserClient()
+      .schema(HR_SCHEMA)
+      .from('companies')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+
+    if (error) throw new Error(error.message);
+    return mapCompany(data);
+  },
+
+  async createEmployee(employee: Record<string, unknown>) {
+    const payload: Database['HR']['Tables']['employees']['Insert'] = {
+      company_id: employee.companyId as string,
+      employee_number: employee.employeeNumber as string,
+      first_name: employee.firstName as string,
+      last_name: employee.lastName as string,
+      email: employee.email as string,
+      phone_number: employee.phoneNumber as string,
+      id_number: employee.idNumber as string,
+      tax_pin: employee.taxPin as string,
+      account_number: employee.accountNumber as string,
+      bank_code: employee.bankCode as string,
+      bank_name: employee.bankName as string,
+      department: employee.department as string,
+      position: employee.position as string,
+      joining_date: employee.joiningDate instanceof Date ? employee.joiningDate.toISOString().slice(0, 10) : (employee.joiningDate as string),
+      status: employee.status as Database['HR']['Tables']['employees']['Insert']['status'],
+      employment_type: employee.employmentType as Database['HR']['Tables']['employees']['Insert']['employment_type'],
+      base_salary: Number(employee.baseSalary),
+      salary_frequency: employee.salaryFrequency as Database['HR']['Tables']['employees']['Insert']['salary_frequency'],
+      allowances: (employee.allowances as Record<string, number>) ?? {},
+      deductions: (employee.deductions as Record<string, number>) ?? {},
+    };
+
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('employees').insert(payload).select('*').single();
+    if (error) throw new Error(error.message);
+    return mapEmployee(data);
+  },
+
+  async getEmployee(id: string) {
+    return getEmployee(browserClient(), id);
+  },
+
+  async getEmployeesByCompany(companyId: string) {
+    return getEmployeesByCompany(browserClient(), companyId);
+  },
+
+  async getActiveEmployeesByCompany(companyId: string) {
+    const employees = await getEmployeesByCompany(browserClient(), companyId);
+    return employees.filter((employee) => employee.status === 'active');
+  },
+
+  async updateEmployee(id: string, updates: Record<string, unknown>) {
+    const payload: Database['HR']['Tables']['employees']['Update'] = {
+      first_name: updates.firstName as string | undefined,
+      last_name: updates.lastName as string | undefined,
+      email: updates.email as string | undefined,
+      phone_number: updates.phoneNumber as string | undefined,
+      id_number: updates.idNumber as string | undefined,
+      tax_pin: updates.taxPin as string | undefined,
+      account_number: updates.accountNumber as string | undefined,
+      bank_code: updates.bankCode as string | undefined,
+      bank_name: updates.bankName as string | undefined,
+      department: updates.department as string | undefined,
+      position: updates.position as string | undefined,
+      status: updates.status as Database['HR']['Tables']['employees']['Update']['status'],
+      employment_type: updates.employmentType as Database['HR']['Tables']['employees']['Update']['employment_type'],
+      base_salary: updates.baseSalary ? Number(updates.baseSalary) : undefined,
+      allowances: updates.allowances as Database['HR']['Tables']['employees']['Update']['allowances'],
+      deductions: updates.deductions as Database['HR']['Tables']['employees']['Update']['deductions'],
+      updated_at: nowIso(),
+    };
+
+    const { data, error } = await browserClient()
+      .schema(HR_SCHEMA)
+      .from('employees')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return mapEmployee(data);
+  },
+
+  async getPayroll(id: string) {
+    return getPayroll(browserClient(), id);
+  },
+
+  async createPayroll(payroll: Database['HR']['Tables']['payroll_runs']['Insert']) {
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('payroll_runs').insert(payroll).select('*').single();
+    if (error) throw new Error(error.message);
+    return mapPayroll(data);
+  },
+
+  async getPayrollsByCompany(companyId: string) {
+    return getPayrollsByCompany(browserClient(), companyId);
+  },
+
+  async getPayrollByMonth(companyId: string, month: string) {
+    return getPayrollByMonth(browserClient(), companyId, month);
+  },
+
+  async updatePayroll(id: string, updates: Database['HR']['Tables']['payroll_runs']['Update']) {
+    const { data, error } = await browserClient()
+      .schema(HR_SCHEMA)
+      .from('payroll_runs')
+      .update({ ...updates, updated_at: nowIso() })
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return mapPayroll(data);
+  },
+
+  async createPayrollDetail(detail: Database['HR']['Tables']['payroll_details']['Insert']) {
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('payroll_details').insert(detail).select('*').single();
+    if (error) throw new Error(error.message);
+    return mapPayrollDetail(data);
+  },
+
+  async getPayrollDetail(id: string) {
+    return getPayrollDetail(browserClient(), id);
+  },
+
+  async getPayrollDetailsByPayroll(payrollId: string) {
+    return getPayrollDetailsByPayroll(browserClient(), payrollId);
+  },
+
+  async createLeaveRequest(payload: Database['HR']['Tables']['leave_requests']['Insert']) {
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('leave_requests').insert(payload).select('*').single();
+    if (error) throw new Error(error.message);
+    return mapLeaveRequest(data);
+  },
+
+  async updateLeaveRequest(id: string, updates: Database['HR']['Tables']['leave_requests']['Update']) {
+    const { data, error } = await browserClient()
+      .schema(HR_SCHEMA)
+      .from('leave_requests')
+      .update({ ...updates, updated_at: nowIso() })
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return mapLeaveRequest(data);
+  },
+
+  async getLeaveRequestsByCompany(companyId: string) {
+    return getLeaveRequestsByCompany(browserClient(), companyId);
+  },
+
+  async createComplianceRecord(payload: Database['HR']['Tables']['compliance_records']['Insert']) {
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('compliance_records').insert(payload).select('*').single();
+    if (error) throw new Error(error.message);
+    return mapComplianceRecord(data);
+  },
+
+  async updateComplianceRecord(id: string, updates: Database['HR']['Tables']['compliance_records']['Update']) {
+    const { data, error } = await browserClient()
+      .schema(HR_SCHEMA)
+      .from('compliance_records')
+      .update({ ...updates, updated_at: nowIso() })
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error) throw new Error(error.message);
+    return mapComplianceRecord(data);
+  },
+
+  async getComplianceRecordsByCompany(companyId: string) {
+    return getComplianceRecordsByCompany(browserClient(), companyId);
+  },
+
+  async getAllCompanies() {
+    const { data, error } = await browserClient().schema(HR_SCHEMA).from('companies').select('*').order('created_at');
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(mapCompany);
+  },
+};

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, FileCheck2, Plus } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
 import { ComplianceRecord, db } from '@/lib/db-schema';
-import { generateId } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
 import { PageHeader } from '@/components/app/page-header';
@@ -48,18 +47,24 @@ export default function CompliancePage() {
   });
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
-    if (currentSession) {
-      setRecords(db.getComplianceRecordsByCompany(currentSession.companyId).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
-    }
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
+      const records = await db.getComplianceRecordsByCompany(currentSession.companyId);
+      if (!mounted) return;
+      setRecords(records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const pendingCount = useMemo(() => records.filter((record) => record.status === 'pending').length, [records]);
 
-  const handleCreateRecord = (event: React.FormEvent) => {
+  const handleCreateRecord = async (event: React.FormEvent) => {
     event.preventDefault();
     setError('');
     setSuccess('');
@@ -69,40 +74,48 @@ export default function CompliancePage() {
       return;
     }
 
-    const newRecord: ComplianceRecord = {
-      id: generateId('compliance'),
-      companyId: session.companyId,
-      recordType: 'kra_filing',
-      period: form.period,
-      status: 'pending',
-      details: {
+    const response = await fetch('/api/compliance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recordType:
+          form.authority === 'NSSF'
+            ? 'nssf_filing'
+            : form.authority === 'NHIF'
+              ? 'nhif_filing'
+              : 'kra_filing',
         authority: form.authority,
-      },
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+        period: form.period,
+        details: {
+          authority: form.authority,
+        },
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to create compliance record.');
+      return;
+    }
 
-    db.createComplianceRecord(newRecord);
-    setRecords((current) => [newRecord, ...current]);
+    setRecords((current) => [payload.record as ComplianceRecord, ...current]);
     setIsCreating(false);
     setForm({ authority: 'KRA (PAYE)', period: '' });
     setSuccess('Compliance record created.');
   };
 
-  const updateRecordStatus = (recordId: string, status: ComplianceRecord['status']) => {
-    setRecords((current) =>
-      current.map((record) =>
-        record.id === recordId
-          ? {
-              ...record,
-              status,
-              submissionDate: status === 'submitted' ? new Date() : record.submissionDate,
-              responseDate: status === 'accepted' || status === 'rejected' ? new Date() : record.responseDate,
-              updatedAt: new Date(),
-            }
-          : record
-      )
-    );
+  const updateRecordStatus = async (recordId: string, status: ComplianceRecord['status']) => {
+    const response = await fetch(`/api/compliance/${recordId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to update compliance record.');
+      return;
+    }
+
+    setRecords((current) => current.map((record) => (record.id === recordId ? (payload.record as ComplianceRecord) : record)));
   };
 
   if (!session) {
@@ -235,10 +248,10 @@ export default function CompliancePage() {
                 label: 'Actions',
                 render: (_, row) => (
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => updateRecordStatus(row.id, 'submitted')}>
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'submitted')}>
                       Submit
                     </Button>
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => updateRecordStatus(row.id, 'accepted')}>
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateRecordStatus(row.id, 'accepted')}>
                       Accept
                     </Button>
                   </div>

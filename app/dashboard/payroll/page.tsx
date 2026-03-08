@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowRight, CheckCheck, CircleDollarSign, FileText, Play, Send } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
 import { db, Payroll, PayrollDetail } from '@/lib/db-schema';
-import { calculateBulkPayroll, generatePayrollSummary, PayrollCalculationResult, PayrollSummary } from '@/lib/payroll-calculator';
-import { formatCurrency, generateId, getCurrentMonth, getMonthName, getNextMonth, getPreviousMonth } from '@/lib/utils-hr';
+import { generatePayrollSummary, PayrollCalculationResult, PayrollSummary } from '@/lib/payroll-calculator';
+import { formatCurrency, getCurrentMonth, getMonthName, getNextMonth, getPreviousMonth } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
 import { PageHeader } from '@/components/app/page-header';
@@ -25,12 +25,13 @@ export default function PayrollPage() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [payroll, setPayroll] = useState<Payroll | null>(null);
   const [payrollDetails, setPayrollDetails] = useState<PayrollDetail[]>([]);
+  const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, string>>({});
   const [summary, setSummary] = useState<PayrollSummary | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const loadPayroll = (companyId: string, month: string) => {
-    const existingPayroll = db.getPayrollByMonth(companyId, month) ?? null;
+  const loadPayroll = async (companyId: string, month: string) => {
+    const existingPayroll = (await db.getPayrollByMonth(companyId, month)) ?? null;
     setPayroll(existingPayroll);
 
     if (!existingPayroll) {
@@ -39,7 +40,7 @@ export default function PayrollPage() {
       return;
     }
 
-    const details = db.getPayrollDetailsByPayroll(existingPayroll.id);
+    const details = await db.getPayrollDetailsByPayroll(existingPayroll.id);
     const calculations = new Map<string, PayrollCalculationResult>();
 
     details.forEach((detail) => {
@@ -66,14 +67,25 @@ export default function PayrollPage() {
   };
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (!token) return;
-
-    const currentSession = authService.getSession(token);
-    setSession(currentSession);
-    if (currentSession) {
-      loadPayroll(currentSession.companyId, selectedMonth);
-    }
+    let mounted = true;
+    const load = async () => {
+      const currentSession = await authService.getSession();
+      if (!mounted || !currentSession) return;
+      setSession(currentSession);
+      const employees = await db.getEmployeesByCompany(currentSession.companyId);
+      if (mounted) {
+        setEmployeeDirectory(
+          Object.fromEntries(
+            employees.map((employee) => [employee.id, `${employee.firstName} ${employee.lastName}|||${employee.position}`])
+          )
+        );
+      }
+      await loadPayroll(currentSession.companyId, selectedMonth);
+    };
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, [selectedMonth]);
 
   const clearMessages = () => {
@@ -81,82 +93,48 @@ export default function PayrollPage() {
     setSuccess('');
   };
 
-  const handleCreatePayroll = () => {
+  const handleCreatePayroll = async () => {
     if (!session) return;
     clearMessages();
 
-    if (payroll) {
-      setError('Payroll for the selected month already exists.');
-      return;
-    }
-
-    const employees = db.getActiveEmployeesByCompany(session.companyId);
-    if (employees.length === 0) {
-      setError('No active employees are available for payroll.');
-      return;
-    }
-
-    const calculations = calculateBulkPayroll(employees);
-    const createdPayroll: Payroll = {
-      id: generateId('payroll'),
-      companyId: session.companyId,
-      payrollMonth: selectedMonth,
-      payrollCycle: 'monthly',
-      status: 'draft',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    db.createPayroll(createdPayroll);
-
-    const details = employees.map((employee) => {
-      const calc = calculations.get(employee.id)!;
-      const detail: PayrollDetail = {
-        id: generateId('detail'),
-        payrollId: createdPayroll.id,
-        employeeId: employee.id,
-        companyId: session.companyId,
-        basicSalary: calc.basicSalary,
-        allowancesTotal: calc.allowances.total,
-        allowanceBreakdown: calc.allowances.breakdown,
-        grossPay: calc.grossSalary,
-        nssfAmount: calc.deductions.nssf,
-        nhifAmount: calc.deductions.nhif,
-        incomeTaxAmount: calc.deductions.incomeTax,
-        otherDeductionsTotal: calc.deductions.other.total,
-        otherDeductionsBreakdown: calc.deductions.other.breakdown,
-        totalDeductions: calc.deductions.total,
-        netPay: calc.netPay,
-        paymentStatus: 'pending',
-        paymentMethod: 'bank_transfer',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      db.createPayrollDetail(detail);
-      return detail;
+    const response = await fetch('/api/payroll', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payrollMonth: selectedMonth }),
     });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to create payroll.');
+      return;
+    }
 
-    setPayroll(createdPayroll);
-    setPayrollDetails(details);
-    setSummary(generatePayrollSummary(calculations));
+    await loadPayroll(session.companyId, selectedMonth);
     setSuccess('Payroll run created successfully.');
   };
 
-  const updatePayrollStatus = (updates: Partial<Payroll>, successMessage: string) => {
+  const updatePayrollStatus = async (status: Payroll['status'], successMessage: string) => {
     if (!payroll) return;
     clearMessages();
-    const updated = db.updatePayroll(payroll.id, updates);
-    if (updated) {
-      setPayroll(updated);
-      setSuccess(successMessage);
+    const response = await fetch(`/api/payroll/${payroll.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to update payroll status.');
+      return;
     }
+
+    await loadPayroll(session!.companyId, selectedMonth);
+    setSuccess(successMessage);
   };
 
   const payrollStatusAction = (() => {
     if (!payroll) return null;
     if (payroll.status === 'draft') {
       return (
-        <Button className="rounded-2xl" onClick={() => updatePayrollStatus({ status: 'pending_approval' }, 'Payroll submitted for approval.')}>
+        <Button className="rounded-2xl" onClick={() => void updatePayrollStatus('pending_approval', 'Payroll submitted for approval.')}>
           <Send className="mr-2 h-4 w-4" />
           Submit for approval
         </Button>
@@ -166,12 +144,7 @@ export default function PayrollPage() {
       return (
         <Button
           className="rounded-2xl"
-          onClick={() =>
-            updatePayrollStatus(
-              { status: 'approved', approvedAt: new Date(), approvedBy: session.userId },
-              'Payroll approved.'
-            )
-          }
+          onClick={() => void updatePayrollStatus('approved', 'Payroll approved.')}
         >
           <CheckCheck className="mr-2 h-4 w-4" />
           Approve payroll
@@ -182,12 +155,7 @@ export default function PayrollPage() {
       return (
         <Button
           className="rounded-2xl"
-          onClick={() =>
-            updatePayrollStatus(
-              { status: 'processed', processedAt: new Date(), processedBy: session.userId },
-              'Payroll processed and ready for disbursement.'
-            )
-          }
+          onClick={() => void updatePayrollStatus('processed', 'Payroll processed and ready for disbursement.')}
         >
           <Play className="mr-2 h-4 w-4" />
           Process payroll
@@ -311,13 +279,11 @@ export default function PayrollPage() {
                 key: 'employeeId',
                 label: 'Employee',
                 render: (value) => {
-                  const employee = db.getEmployeesByCompany(session.companyId).find((item) => item.id === value);
+                  const [name, position] = (employeeDirectory[String(value)] ?? `${String(value)}|||Payroll record`).split('|||');
                   return (
                     <div>
-                      <p className="font-semibold text-foreground">
-                        {employee ? `${employee.firstName} ${employee.lastName}` : String(value)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{employee?.position ?? 'Payroll record'}</p>
+                      <p className="font-semibold text-foreground">{name}</p>
+                      <p className="text-xs text-muted-foreground">{position}</p>
                     </div>
                   );
                 },
@@ -355,7 +321,7 @@ export default function PayrollPage() {
                 label: 'Payslip',
                 render: (_, row) => (
                   <Button asChild variant="outline" size="sm" className="rounded-2xl">
-                    <Link href={`/dashboard/payroll/${row.payrollId}/payslip`}>Open</Link>
+                    <Link href={`/dashboard/payroll/${row.id}/payslip`}>Open</Link>
                   </Button>
                 ),
               },

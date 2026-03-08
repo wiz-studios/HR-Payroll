@@ -27,21 +27,30 @@ export default function EmployeeDetailPage() {
   const [formData, setFormData] = useState<Partial<Employee>>({});
 
   useEffect(() => {
-    const token = localStorage.getItem('sessionToken');
-    if (token) {
-      const sess = authService.getSession(token);
+    let mounted = true;
+    const load = async () => {
+      const sess = await authService.getSession();
+      if (!mounted) return;
       setSession(sess);
-      if (sess) {
-        const emp = db.getEmployee(employeeId);
-        if (emp && emp.companyId === sess.companyId) {
-          setEmployee(emp);
-          setFormData(emp);
-        } else {
-          setError('Employee not found');
-        }
+      if (!sess) {
+        setIsLoading(false);
+        return;
       }
-    }
-    setIsLoading(false);
+
+      const emp = await db.getEmployee(employeeId);
+      if (emp && emp.companyId === sess.companyId) {
+        setEmployee(emp);
+        setFormData(emp);
+      } else {
+        setError('Employee not found');
+      }
+      setIsLoading(false);
+    };
+
+    void load();
+    return () => {
+      mounted = false;
+    };
   }, [employeeId]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -78,9 +87,18 @@ export default function EmployeeDetailPage() {
     setSuccess('');
 
     try {
-      const updated = db.updateEmployee(employeeId, formData);
-      if (updated) {
-        setEmployee(updated);
+      const response = await fetch(`/api/employees/${employeeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to save changes');
+      }
+
+      if (payload.employee) {
+        setEmployee(payload.employee);
         setIsEditing(false);
         setSuccess('Employee information updated successfully');
         setTimeout(() => setSuccess(''), 3000);
@@ -92,12 +110,21 @@ export default function EmployeeDetailPage() {
 
   const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newStatus = e.target.value as Employee['status'];
-    const updated = db.updateEmployee(employeeId, { status: newStatus });
-    if (updated) {
-      setEmployee(updated);
+    void (async () => {
+      const response = await fetch(`/api/employees/${employeeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.error ?? 'Failed to update status');
+        return;
+      }
+      setEmployee(payload.employee);
       setSuccess('Status updated successfully');
       setTimeout(() => setSuccess(''), 3000);
-    }
+    })();
   };
 
   if (isLoading) {

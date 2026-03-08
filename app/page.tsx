@@ -41,8 +41,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const { sessionToken } = authService.login({ email, password });
-      localStorage.setItem('sessionToken', sessionToken);
+      await authService.login({ email, password });
       router.push('/dashboard');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -92,16 +91,10 @@ export default function LoginPage() {
               </div>
 
               <div className="rounded-[28px] border border-border/70 bg-secondary/55 p-5 md:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="font-mono text-xs uppercase tracking-[0.28em] text-muted-foreground">Demo Access</p>
-                    <p className="mt-2 text-sm text-foreground">Use the seeded admin account to review the redesigned workspace.</p>
-                  </div>
-                  <div className="grid gap-2 text-sm">
-                    <code className="rounded-2xl bg-card px-3 py-2 font-mono text-foreground">admin@techcorp.com</code>
-                    <code className="rounded-2xl bg-card px-3 py-2 font-mono text-foreground">AdminPass123</code>
-                  </div>
-                </div>
+                <p className="font-mono text-xs uppercase tracking-[0.28em] text-muted-foreground">Production Ready Path</p>
+                <p className="mt-3 text-sm leading-6 text-foreground">
+                  Sign in with a Supabase-backed account tied to a company workspace. Demo bootstrap data has been removed.
+                </p>
               </div>
             </div>
           </section>
