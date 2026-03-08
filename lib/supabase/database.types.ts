@@ -128,6 +128,8 @@ export interface Database {
           approved_by: string | null;
           processed_at: string | null;
           processed_by: string | null;
+          locked_at: string | null;
+          locked_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -141,6 +143,8 @@ export interface Database {
           approved_by?: string | null;
           processed_at?: string | null;
           processed_by?: string | null;
+          locked_at?: string | null;
+          locked_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -2,12 +2,33 @@ import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapPayroll } from '@/lib/hr/repository';
 
+const TRANSITIONS = {
+  draft: ['pending_approval'],
+  pending_approval: ['draft', 'approved'],
+  approved: ['processed'],
+  processed: ['paid'],
+  paid: [],
+} satisfies Record<string, string[]>;
+
+const ACTION_BY_STATUS = {
+  draft: 'payroll_reopened',
+  pending_approval: 'payroll_submitted',
+  approved: 'payroll_approved',
+  processed: 'payroll_processed',
+  paid: 'payroll_paid',
+} satisfies Record<string, string>;
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
 
   const { id } = await context.params;
   const payload = await request.json();
+  const nextStatus = payload.status as string | undefined;
+  if (!nextStatus || !(nextStatus in TRANSITIONS)) {
+    return NextResponse.json({ error: 'Invalid payroll status.' }, { status: 400 });
+  }
+
   const admin = createAdminClient();
 
   const { data: existing } = await admin.schema('HR').from('payroll_runs').select('*').eq('id', id).maybeSingle();
@@ -15,12 +36,23 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: 'Payroll run not found.' }, { status: 404 });
   }
 
-  if (payload.status === 'approved' && auth.session.userRole !== 'admin') {
+  if (!TRANSITIONS[existing.status].includes(nextStatus)) {
+    return NextResponse.json(
+      { error: `Invalid transition from ${existing.status.replace('_', ' ')} to ${nextStatus.replace('_', ' ')}.` },
+      { status: 400 }
+    );
+  }
+
+  if (nextStatus === 'approved' && auth.session.userRole !== 'admin') {
     return NextResponse.json({ error: 'Only administrators can approve payroll.' }, { status: 403 });
   }
 
-  if (payload.status === 'processed' && auth.session.userRole !== 'admin') {
+  if ((nextStatus === 'processed' || nextStatus === 'paid') && auth.session.userRole !== 'admin') {
     return NextResponse.json({ error: 'Only administrators can process payroll.' }, { status: 403 });
+  }
+
+  if (existing.locked_at && existing.status !== 'processed') {
+    return NextResponse.json({ error: 'This payroll run is locked and can no longer be changed.' }, { status: 409 });
   }
 
   const now = new Date().toISOString();
@@ -28,11 +60,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     .schema('HR')
     .from('payroll_runs')
     .update({
-      status: payload.status,
-      approved_at: payload.status === 'approved' ? now : existing.approved_at,
-      approved_by: payload.status === 'approved' ? auth.session.userId : existing.approved_by,
-      processed_at: payload.status === 'processed' ? now : existing.processed_at,
-      processed_by: payload.status === 'processed' ? auth.session.userId : existing.processed_by,
+      status: nextStatus,
+      approved_at: nextStatus === 'approved' ? now : existing.approved_at,
+      approved_by: nextStatus === 'approved' ? auth.session.userId : existing.approved_by,
+      processed_at: nextStatus === 'processed' ? now : existing.processed_at,
+      processed_by: nextStatus === 'processed' ? auth.session.userId : existing.processed_by,
+      locked_at: nextStatus === 'processed' ? (existing.locked_at ?? now) : existing.locked_at,
+      locked_by: nextStatus === 'processed' ? (existing.locked_by ?? auth.session.userId) : existing.locked_by,
       updated_at: now,
     })
     .eq('id', id)
@@ -46,11 +80,21 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   await insertAuditLog(admin, {
     company_id: auth.session.companyId,
     actor_user_id: auth.session.userId,
-    action: 'payroll_status_updated',
+    action: ACTION_BY_STATUS[nextStatus],
     entity_type: 'payroll_runs',
     entity_id: data.id,
-    before: existing,
-    after: data,
+    before: {
+      status: existing.status,
+      approvedAt: existing.approved_at,
+      processedAt: existing.processed_at,
+      lockedAt: existing.locked_at,
+    },
+    after: {
+      status: data.status,
+      approvedAt: data.approved_at,
+      processedAt: data.processed_at,
+      lockedAt: data.locked_at,
+    },
   });
 
   return NextResponse.json({ payroll: mapPayroll(data) });

@@ -8,6 +8,10 @@ export async function POST(request: Request) {
   if ('error' in auth) return auth.error;
 
   const payload = await request.json();
+  if (!payload.payrollMonth || typeof payload.payrollMonth !== 'string') {
+    return NextResponse.json({ error: 'Payroll month is required.' }, { status: 400 });
+  }
+
   const admin = createAdminClient();
   const employees = (await getEmployeesByCompany(admin, auth.session.companyId)).filter((employee) => employee.status === 'active');
   if (employees.length === 0) {
@@ -37,6 +41,8 @@ export async function POST(request: Request) {
       payroll_month: payload.payrollMonth,
       payroll_cycle: 'monthly',
       status: 'draft',
+      locked_at: null,
+      locked_by: null,
       created_at: now,
       updated_at: now,
     })
@@ -88,7 +94,14 @@ export async function POST(request: Request) {
     action: 'payroll_created',
     entity_type: 'payroll_runs',
     entity_id: payroll.id,
-    after: payroll,
+    after: {
+      payrollMonth: payroll.payroll_month,
+      status: payroll.status,
+      employeeCount: employees.length,
+      grossPay: detailRows.reduce((sum, row) => sum + row.gross_pay, 0),
+      totalDeductions: detailRows.reduce((sum, row) => sum + row.total_deductions, 0),
+      netPay: detailRows.reduce((sum, row) => sum + row.net_pay, 0),
+    },
   });
 
   return NextResponse.json({

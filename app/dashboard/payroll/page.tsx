@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, CheckCheck, CircleDollarSign, FileText, Play, Send } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCheck, CircleDollarSign, FileText, LockKeyhole, Play, Send } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
-import { db, Payroll, PayrollDetail } from '@/lib/db-schema';
+import { AuditLog, db, Payroll, PayrollDetail } from '@/lib/db-schema';
 import { generatePayrollSummary, PayrollCalculationResult, PayrollSummary } from '@/lib/payroll-calculator';
 import { formatCurrency, getCurrentMonth, getMonthName, getNextMonth, getPreviousMonth } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
@@ -26,6 +26,7 @@ export default function PayrollPage() {
   const [payroll, setPayroll] = useState<Payroll | null>(null);
   const [payrollDetails, setPayrollDetails] = useState<PayrollDetail[]>([]);
   const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, string>>({});
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [summary, setSummary] = useState<PayrollSummary | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,11 +37,15 @@ export default function PayrollPage() {
 
     if (!existingPayroll) {
       setPayrollDetails([]);
+      setAuditLogs([]);
       setSummary(null);
       return;
     }
 
-    const details = await db.getPayrollDetailsByPayroll(existingPayroll.id);
+    const [details, logs] = await Promise.all([
+      db.getPayrollDetailsByPayroll(existingPayroll.id),
+      db.getAuditLogsByEntity(companyId, 'payroll_runs', existingPayroll.id),
+    ]);
     const calculations = new Map<string, PayrollCalculationResult>();
 
     details.forEach((detail) => {
@@ -63,6 +68,7 @@ export default function PayrollPage() {
     });
 
     setPayrollDetails(details);
+    setAuditLogs(logs);
     setSummary(generatePayrollSummary(calculations));
   };
 
@@ -162,8 +168,28 @@ export default function PayrollPage() {
         </Button>
       );
     }
+    if (payroll.status === 'processed' && session?.userRole === 'admin') {
+      return (
+        <Button
+          className="rounded-2xl"
+          onClick={() => void updatePayrollStatus('paid', 'Payroll marked as paid.')}
+        >
+          <LockKeyhole className="mr-2 h-4 w-4" />
+          Mark as paid
+        </Button>
+      );
+    }
     return null;
   })();
+
+  const controlNote = useMemo(() => {
+    if (!payroll) return 'Generate a payroll run to calculate salaries for all active employees.';
+    if (payroll.status === 'draft') return 'Draft cycles are editable and can be submitted for review.';
+    if (payroll.status === 'pending_approval') return 'This cycle is awaiting administrator approval or can be sent back to draft.';
+    if (payroll.status === 'approved') return 'Approved cycles can now be processed and locked for execution.';
+    if (payroll.status === 'processed') return 'This cycle is locked against operational changes and is ready to be marked as paid.';
+    return 'This cycle is finalized and should be treated as immutable payroll history.';
+  }, [payroll]);
 
   if (!session) {
     return null;
@@ -228,14 +254,34 @@ export default function PayrollPage() {
           <div className="mt-5 space-y-4">
             <div className="rounded-[24px] border border-border/70 bg-card/70 p-5">
               <p className="text-sm font-medium text-foreground">
-                {payroll
-                  ? 'Use the action below to move this cycle to the next stage.'
-                  : 'Generate a payroll run to calculate salaries for all active employees.'}
+                {payroll ? 'Use the action below to move this cycle to the next stage.' : controlNote}
               </p>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Draft cycles can be reviewed before approval. Once processed, figures should be treated as payroll-ready.
+                {controlNote}
               </p>
               <div className="mt-5">{payrollStatusAction}</div>
+            </div>
+
+            <div className="rounded-[24px] border border-border/70 bg-card/70 p-5">
+              <p className="text-sm font-medium text-foreground">Lock posture</p>
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Locked</span>
+                  <StatusPill label={payroll?.lockedAt ? 'Yes' : 'No'} tone={payroll?.lockedAt ? 'success' : 'neutral'} />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Processed at</span>
+                  <span className="font-medium text-foreground">
+                    {payroll?.processedAt ? payroll.processedAt.toLocaleString('en-KE') : 'Not processed'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Locked at</span>
+                  <span className="font-medium text-foreground">
+                    {payroll?.lockedAt ? payroll.lockedAt.toLocaleString('en-KE') : 'Unlocked'}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="rounded-[24px] border border-border/70 bg-card/70 p-5">
@@ -327,6 +373,25 @@ export default function PayrollPage() {
               },
             ]}
           />
+
+          <div className="mt-6 rounded-[24px] border border-border/70 bg-card/70 p-5">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Audit Timeline</p>
+            <div className="mt-4 space-y-3">
+              {auditLogs.length > 0 ? (
+                auditLogs.map((entry) => (
+                  <div key={entry.id} className="flex items-start justify-between gap-4 rounded-[20px] border border-border/60 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">{entry.action.replaceAll('_', ' ')}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{entry.createdAt.toLocaleString('en-KE')}</p>
+                    </div>
+                    <StatusPill label={payroll?.status.replace('_', ' ') ?? 'draft'} tone={payroll ? mapStatusTone(payroll.status) : 'neutral'} />
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No payroll events recorded yet for this cycle.</p>
+              )}
+            </div>
+          </div>
         </div>
       </section>
     </div>

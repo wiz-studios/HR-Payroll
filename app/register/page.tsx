@@ -71,7 +71,7 @@ export default function RegisterPage() {
                   Launch a payroll workspace that your HR and finance teams can actually run.
                 </h1>
                 <p className="text-base leading-7 text-muted-foreground">
-                  Create your company tenant, provision the first admin account, and start with a seeded payroll-ready layout.
+                  Create your company tenant, provision the first admin account, and launch a payroll workspace with live company data.
                 </p>
               </div>
 

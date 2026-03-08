@@ -101,6 +101,8 @@ export function mapPayroll(row: Database['HR']['Tables']['payroll_runs']['Row'])
     approvedBy: row.approved_by ?? undefined,
     processedAt: row.processed_at ? new Date(row.processed_at) : undefined,
     processedBy: row.processed_by ?? undefined,
+    lockedAt: row.locked_at ? new Date(row.locked_at) : undefined,
+    lockedBy: row.locked_by ?? undefined,
   };
 }
 
@@ -231,6 +233,24 @@ export async function getPayrollsByCompany(client: SupabaseClient<Database>, com
     .order('payroll_month', { ascending: false });
   assertNoError(error);
   return (data ?? []).map(mapPayroll);
+}
+
+export async function getAuditLogsByEntity(
+  client: SupabaseClient<Database>,
+  companyId: string,
+  entityType: string,
+  entityId: string
+) {
+  const { data, error } = await client
+    .schema(HR_SCHEMA)
+    .from('audit_logs')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .order('created_at', { ascending: false });
+  assertNoError(error);
+  return (data ?? []).map(mapAuditLog);
 }
 
 export async function getPayrollByMonth(client: SupabaseClient<Database>, companyId: string, month: string) {

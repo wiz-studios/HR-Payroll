@@ -3,6 +3,7 @@ import type { Database } from '@/lib/supabase/database.types';
 import {
   getCompany,
   getCompanyUserByUserId,
+  getAuditLogsByEntity,
   getComplianceRecordsByCompany,
   getEmployee,
   getEmployeesByCompany,
@@ -167,6 +168,10 @@ export const db = {
 
   async getPayrollsByCompany(companyId: string) {
     return getPayrollsByCompany(browserClient(), companyId);
+  },
+
+  async getAuditLogsByEntity(companyId: string, entityType: string, entityId: string) {
+    return getAuditLogsByEntity(browserClient(), companyId, entityType, entityId);
   },
 
   async getPayrollByMonth(companyId: string, month: string) {

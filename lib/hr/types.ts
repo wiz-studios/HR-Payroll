@@ -63,6 +63,8 @@ export interface Payroll {
   approvedBy?: string;
   processedAt?: Date;
   processedBy?: string;
+  lockedAt?: Date;
+  lockedBy?: string;
 }
 
 export interface PayrollDetail {

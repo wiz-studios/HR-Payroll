@@ -2,6 +2,15 @@ create schema if not exists "HR";
 
 create extension if not exists pgcrypto;
 
+grant usage on schema "HR" to anon, authenticated, service_role;
+grant all on all tables in schema "HR" to anon, authenticated, service_role;
+grant all on all sequences in schema "HR" to anon, authenticated, service_role;
+grant execute on all functions in schema "HR" to anon, authenticated, service_role;
+
+alter default privileges in schema "HR" grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema "HR" grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema "HR" grant execute on functions to anon, authenticated, service_role;
+
 create table if not exists "HR".companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -182,6 +191,8 @@ create or replace function "HR".current_company_id()
 returns uuid
 language sql
 stable
+security definer
+set search_path = "HR", auth, public
 as $$
   select company_id
   from "HR".company_users
@@ -193,12 +204,19 @@ create or replace function "HR".current_company_role()
 returns text
 language sql
 stable
+security definer
+set search_path = "HR", auth, public
 as $$
   select role
   from "HR".company_users
   where user_id = auth.uid()
   limit 1
 $$;
+
+revoke all on function "HR".current_company_id() from public;
+revoke all on function "HR".current_company_role() from public;
+grant execute on function "HR".current_company_id() to anon, authenticated, service_role;
+grant execute on function "HR".current_company_role() to anon, authenticated, service_role;
 
 create policy "company read access" on "HR".companies
 for select using (id = "HR".current_company_id());
