@@ -50,7 +50,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   try {
-    await syncEmployeeToEnterprise(admin, data);
+    await syncEmployeeToEnterprise(admin, data, {
+      branchId: updates.branchId,
+      departmentId: updates.departmentId,
+      costCenterId: updates.costCenterId,
+      payrollGroupId: updates.payrollGroupId,
+      jobGrade: updates.jobGrade,
+      workLocation: updates.workLocation,
+    });
   } catch (syncError) {
     return NextResponse.json(
       { error: syncError instanceof Error ? syncError.message : 'Employee updated in HR but failed to sync to enterprise schema.' },

@@ -12,6 +12,31 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+interface CompanyStructure {
+  branches: Array<{ id: string; name: string }>;
+  departments: Array<{ id: string; name: string }>;
+  costCenters: Array<{ id: string; name: string }>;
+  payrollGroups: Array<{ id: string; name: string }>;
+}
+
+interface EmployeeOrganization {
+  branchId: string | null;
+  departmentId: string | null;
+  costCenterId: string | null;
+  payrollGroupId: string | null;
+  jobGrade: string | null;
+  workLocation: string | null;
+}
+
+type EmployeeEditor = Partial<Employee> & {
+  branchId?: string;
+  departmentId?: string;
+  costCenterId?: string;
+  payrollGroupId?: string;
+  jobGrade?: string;
+  workLocation?: string;
+};
+
 export default function EmployeeDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -19,12 +44,14 @@ export default function EmployeeDetailPage() {
 
   const [session, setSession] = useState<AuthSession | null>(null);
   const [employee, setEmployee] = useState<Employee | null>(null);
+  const [structure, setStructure] = useState<CompanyStructure>({ branches: [], departments: [], costCenters: [], payrollGroups: [] });
+  const [organization, setOrganization] = useState<EmployeeOrganization | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  const [formData, setFormData] = useState<Partial<Employee>>({});
+  const [formData, setFormData] = useState<EmployeeEditor>({});
   const canManageEmployee = session?.userRole === 'admin' || session?.userRole === 'manager';
 
   useEffect(() => {
@@ -38,10 +65,45 @@ export default function EmployeeDetailPage() {
         return;
       }
 
-      const emp = await db.getEmployee(employeeId);
+      const [emp, structureResponse, organizationResponse] = await Promise.all([
+        db.getEmployee(employeeId),
+        fetch('/api/company-structure'),
+        fetch(`/api/employees/${employeeId}/organization`),
+      ]);
+      const structurePayload = (await structureResponse.json().catch(() => ({
+        branches: [],
+        departments: [],
+        costCenters: [],
+        payrollGroups: [],
+      }))) as CompanyStructure;
+      const organizationPayload = (await organizationResponse.json().catch(() => ({
+        branchId: null,
+        departmentId: null,
+        costCenterId: null,
+        payrollGroupId: null,
+        jobGrade: null,
+        workLocation: null,
+      }))) as EmployeeOrganization;
       if (emp && emp.companyId === sess.companyId) {
         setEmployee(emp);
-        setFormData(emp);
+        setFormData({
+          ...emp,
+          branchId: organizationPayload.branchId ?? '',
+          departmentId: organizationPayload.departmentId ?? '',
+          costCenterId: organizationPayload.costCenterId ?? '',
+          payrollGroupId: organizationPayload.payrollGroupId ?? '',
+          jobGrade: organizationPayload.jobGrade ?? '',
+          workLocation: organizationPayload.workLocation ?? '',
+        });
+        setOrganization(organizationPayload);
+        if (structureResponse.ok) {
+          setStructure({
+            branches: structurePayload.branches ?? [],
+            departments: structurePayload.departments ?? [],
+            costCenters: structurePayload.costCenters ?? [],
+            payrollGroups: structurePayload.payrollGroups ?? [],
+          });
+        }
       } else {
         setError('Employee not found');
       }
@@ -86,12 +148,19 @@ export default function EmployeeDetailPage() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (structure.departments.length > 0 && !formData.departmentId) {
+      setError('Select a department for the employee.');
+      return;
+    }
 
     try {
       const response = await fetch(`/api/employees/${employeeId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          department: structure.departments.find((department) => department.id === formData.departmentId)?.name ?? formData.department,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -100,6 +169,14 @@ export default function EmployeeDetailPage() {
 
       if (payload.employee) {
         setEmployee(payload.employee);
+        setOrganization({
+          branchId: formData.branchId ?? null,
+          departmentId: formData.departmentId ?? null,
+          costCenterId: formData.costCenterId ?? null,
+          payrollGroupId: formData.payrollGroupId ?? null,
+          jobGrade: formData.jobGrade ?? null,
+          workLocation: formData.workLocation ?? null,
+        });
         setIsEditing(false);
         setSuccess('Employee information updated successfully');
         setTimeout(() => setSuccess(''), 3000);
@@ -115,7 +192,15 @@ export default function EmployeeDetailPage() {
       const response = await fetch(`/api/employees/${employeeId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          status: newStatus,
+          branchId: organization?.branchId ?? undefined,
+          departmentId: organization?.departmentId ?? undefined,
+          costCenterId: organization?.costCenterId ?? undefined,
+          payrollGroupId: organization?.payrollGroupId ?? undefined,
+          jobGrade: organization?.jobGrade ?? undefined,
+          workLocation: organization?.workLocation ?? undefined,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -273,12 +358,20 @@ export default function EmployeeDetailPage() {
                   <div className="space-y-2">
                     <Label htmlFor="department">Department</Label>
                     {isEditing ? (
-                      <Input
-                        id="department"
-                        name="department"
-                        value={formData.department || ''}
+                      <select
+                        id="departmentId"
+                        name="departmentId"
+                        value={formData.departmentId || ''}
                         onChange={handleInputChange}
-                      />
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="">No department</option>
+                        {structure.departments.map((department) => (
+                          <option key={department.id} value={department.id}>
+                            {department.name}
+                          </option>
+                        ))}
+                      </select>
                     ) : (
                       <p className="py-2 text-gray-900">{employee.department}</p>
                     )}
@@ -295,6 +388,100 @@ export default function EmployeeDetailPage() {
                       />
                     ) : (
                       <p className="py-2 text-gray-900">{employee.position}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="branchId">Branch</Label>
+                    {isEditing ? (
+                      <select
+                        id="branchId"
+                        name="branchId"
+                        value={formData.branchId || ''}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="">No branch</option>
+                        {structure.branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="py-2 text-gray-900">{structure.branches.find((branch) => branch.id === organization?.branchId)?.name ?? 'Not assigned'}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="costCenterId">Cost Center</Label>
+                    {isEditing ? (
+                      <select
+                        id="costCenterId"
+                        name="costCenterId"
+                        value={formData.costCenterId || ''}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="">No cost center</option>
+                        {structure.costCenters.map((costCenter) => (
+                          <option key={costCenter.id} value={costCenter.id}>
+                            {costCenter.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="py-2 text-gray-900">{structure.costCenters.find((costCenter) => costCenter.id === organization?.costCenterId)?.name ?? 'Not assigned'}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="payrollGroupId">Payroll Group</Label>
+                    {isEditing ? (
+                      <select
+                        id="payrollGroupId"
+                        name="payrollGroupId"
+                        value={formData.payrollGroupId || ''}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      >
+                        <option value="">Default monthly group</option>
+                        {structure.payrollGroups.map((group) => (
+                          <option key={group.id} value={group.id}>
+                            {group.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="py-2 text-gray-900">{structure.payrollGroups.find((group) => group.id === organization?.payrollGroupId)?.name ?? 'Default monthly group'}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="jobGrade">Job Grade</Label>
+                    {isEditing ? (
+                      <Input
+                        id="jobGrade"
+                        name="jobGrade"
+                        value={formData.jobGrade || ''}
+                        onChange={handleInputChange}
+                      />
+                    ) : (
+                      <p className="py-2 text-gray-900">{organization?.jobGrade || 'Not set'}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="workLocation">Work Location</Label>
+                    {isEditing ? (
+                      <Input
+                        id="workLocation"
+                        name="workLocation"
+                        value={formData.workLocation || ''}
+                        onChange={handleInputChange}
+                      />
+                    ) : (
+                      <p className="py-2 text-gray-900">{organization?.workLocation || 'Not set'}</p>
                     )}
                   </div>
 
@@ -349,7 +536,15 @@ export default function EmployeeDetailPage() {
                       variant="outline"
                       onClick={() => {
                         setIsEditing(false);
-                        setFormData(employee);
+                        setFormData({
+                          ...employee,
+                          branchId: organization?.branchId ?? '',
+                          departmentId: organization?.departmentId ?? '',
+                          costCenterId: organization?.costCenterId ?? '',
+                          payrollGroupId: organization?.payrollGroupId ?? '',
+                          jobGrade: organization?.jobGrade ?? '',
+                          workLocation: organization?.workLocation ?? '',
+                        });
                       }}
                     >
                       Cancel
@@ -441,7 +636,15 @@ export default function EmployeeDetailPage() {
                       variant="outline"
                       onClick={() => {
                         setIsEditing(false);
-                        setFormData(employee);
+                        setFormData({
+                          ...employee,
+                          branchId: organization?.branchId ?? '',
+                          departmentId: organization?.departmentId ?? '',
+                          costCenterId: organization?.costCenterId ?? '',
+                          payrollGroupId: organization?.payrollGroupId ?? '',
+                          jobGrade: organization?.jobGrade ?? '',
+                          workLocation: organization?.workLocation ?? '',
+                        });
                       }}
                     >
                       Cancel

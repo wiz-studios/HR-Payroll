@@ -49,7 +49,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    await syncEmployeeToEnterprise(admin, data);
+    await syncEmployeeToEnterprise(admin, data, {
+      branchId: payload.branchId,
+      departmentId: payload.departmentId,
+      costCenterId: payload.costCenterId,
+      payrollGroupId: payload.payrollGroupId,
+      jobGrade: payload.jobGrade,
+      workLocation: payload.workLocation,
+    });
   } catch (syncError) {
     await admin.schema('HR').from('employees').delete().eq('id', data.id);
     return NextResponse.json(

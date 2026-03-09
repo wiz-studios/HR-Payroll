@@ -22,9 +22,17 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+interface CompanyStructure {
+  branches: Array<{ id: string; name: string; branch_code: string }>;
+  departments: Array<{ id: string; name: string; department_code: string }>;
+  costCenters: Array<{ id: string; name: string; cost_center_code: string }>;
+  payrollGroups: Array<{ id: string; name: string; group_code: string; pay_frequency: string; is_default: boolean }>;
+}
+
 export default function EmployeesPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [structure, setStructure] = useState<CompanyStructure>({ branches: [], departments: [], costCenters: [], payrollGroups: [] });
   const [error, setError] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,7 +46,13 @@ export default function EmployeesPage() {
     bankCode: '',
     bankName: '',
     department: '',
+    branchId: '',
+    departmentId: '',
+    costCenterId: '',
+    payrollGroupId: '',
     position: '',
+    workLocation: '',
+    jobGrade: '',
     baseSalary: '',
     employmentType: 'permanent' as Employee['employmentType'],
   });
@@ -49,9 +63,26 @@ export default function EmployeesPage() {
       const currentSession = await authService.getSession();
       if (!mounted || !currentSession) return;
       setSession(currentSession);
-      const employeeRows = await db.getEmployeesByCompany(currentSession.companyId);
+      const [employeeRows, structureResponse] = await Promise.all([
+        db.getEmployeesByCompany(currentSession.companyId),
+        fetch('/api/company-structure'),
+      ]);
+      const structurePayload = (await structureResponse.json().catch(() => ({
+        branches: [],
+        departments: [],
+        costCenters: [],
+        payrollGroups: [],
+      }))) as CompanyStructure;
       if (!mounted) return;
       setEmployees(employeeRows);
+      if (structureResponse.ok) {
+        setStructure({
+          branches: structurePayload.branches ?? [],
+          departments: structurePayload.departments ?? [],
+          costCenters: structurePayload.costCenters ?? [],
+          payrollGroups: structurePayload.payrollGroups ?? [],
+        });
+      }
     };
     void load();
     return () => {
@@ -77,6 +108,10 @@ export default function EmployeesPage() {
       setError('Base salary must be greater than zero.');
       return;
     }
+    if (structure.departments.length > 0 && !formData.departmentId) {
+      setError('Select a department for the employee.');
+      return;
+    }
 
     const response = await fetch('/api/employees', {
       method: 'POST',
@@ -92,8 +127,14 @@ export default function EmployeesPage() {
         accountNumber: formData.accountNumber,
         bankCode: formData.bankCode,
         bankName: formData.bankName,
-        department: formData.department,
+        department: structure.departments.find((department) => department.id === formData.departmentId)?.name ?? formData.department,
+        branchId: formData.branchId || undefined,
+        departmentId: formData.departmentId || undefined,
+        costCenterId: formData.costCenterId || undefined,
+        payrollGroupId: formData.payrollGroupId || undefined,
         position: formData.position,
+        workLocation: formData.workLocation || undefined,
+        jobGrade: formData.jobGrade || undefined,
         joiningDate: new Date().toISOString().slice(0, 10),
         status: 'active',
         employmentType: formData.employmentType,
@@ -128,7 +169,13 @@ export default function EmployeesPage() {
       bankCode: '',
       bankName: '',
       department: '',
+      branchId: '',
+      departmentId: '',
+      costCenterId: '',
+      payrollGroupId: '',
       position: '',
+      workLocation: '',
+      jobGrade: '',
       baseSalary: '',
       employmentType: 'permanent',
     });
@@ -180,8 +227,9 @@ export default function EmployeesPage() {
                     ['bankName', 'Bank', 'Equity Bank'],
                     ['accountNumber', 'Account number', '1234567890'],
                     ['bankCode', 'Bank code', '001'],
-                    ['department', 'Department', 'Finance'],
                     ['position', 'Position', 'Payroll Analyst'],
+                    ['workLocation', 'Work location', 'Nairobi HQ'],
+                    ['jobGrade', 'Job grade', 'M2'],
                     ['baseSalary', 'Base salary', '120000'],
                   ].map(([name, label, placeholder]) => (
                     <div key={name}>
@@ -198,6 +246,93 @@ export default function EmployeesPage() {
                       />
                     </div>
                   ))}
+
+                  <div>
+                    <Label htmlFor="branchId">Branch</Label>
+                    <select
+                      id="branchId"
+                      name="branchId"
+                      value={formData.branchId}
+                      onChange={handleInputChange}
+                      className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm text-foreground outline-none ring-ring/50 transition focus:ring-2"
+                    >
+                      <option value="">No branch</option>
+                      {structure.branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="departmentId">Department</Label>
+                    <select
+                      id="departmentId"
+                      name="departmentId"
+                      value={formData.departmentId}
+                      onChange={handleInputChange}
+                      className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm text-foreground outline-none ring-ring/50 transition focus:ring-2"
+                    >
+                      <option value="">No department</option>
+                      {structure.departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {structure.departments.length === 0 ? (
+                    <div>
+                      <Label htmlFor="department">Department name</Label>
+                      <Input
+                        id="department"
+                        name="department"
+                        value={formData.department}
+                        onChange={handleInputChange}
+                        placeholder="Finance"
+                        className="mt-2 h-12 rounded-2xl border-border/70 bg-card"
+                        required
+                      />
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <Label htmlFor="costCenterId">Cost center</Label>
+                    <select
+                      id="costCenterId"
+                      name="costCenterId"
+                      value={formData.costCenterId}
+                      onChange={handleInputChange}
+                      className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm text-foreground outline-none ring-ring/50 transition focus:ring-2"
+                    >
+                      <option value="">No cost center</option>
+                      {structure.costCenters.map((costCenter) => (
+                        <option key={costCenter.id} value={costCenter.id}>
+                          {costCenter.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="payrollGroupId">Payroll group</Label>
+                    <select
+                      id="payrollGroupId"
+                      name="payrollGroupId"
+                      value={formData.payrollGroupId}
+                      onChange={handleInputChange}
+                      className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm text-foreground outline-none ring-ring/50 transition focus:ring-2"
+                    >
+                      <option value="">Default monthly group</option>
+                      {structure.payrollGroups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
                   <div>
                     <Label htmlFor="employmentType">Employment type</Label>

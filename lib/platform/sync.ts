@@ -1,6 +1,30 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 type UntypedClient = SupabaseClient<any, any, any>;
+type CompanyStructureEntityType = 'branch' | 'department' | 'costCenter' | 'payrollGroup';
+
+interface EmployeeEnterpriseOverrides {
+  branchId?: string | null;
+  departmentId?: string | null;
+  costCenterId?: string | null;
+  payrollGroupId?: string | null;
+  jobGrade?: string | null;
+  workLocation?: string | null;
+}
+
+interface CompanyStructureMutation {
+  entityType: CompanyStructureEntityType;
+  id?: string;
+  name: string;
+  code?: string | null;
+  location?: string | null;
+  branchId?: string | null;
+  departmentId?: string | null;
+  parentDepartmentId?: string | null;
+  payFrequency?: 'monthly' | 'weekly' | 'biweekly' | 'daily' | 'off_cycle';
+  isDefault?: boolean;
+  isActive?: boolean;
+}
 
 function slugifyCompanyName(name: string) {
   const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -11,6 +35,15 @@ function mapLegacyRoleToCore(role: 'admin' | 'manager' | 'employee') {
   if (role === 'admin') return 'company_admin';
   if (role === 'manager') return 'hr_manager';
   return 'employee';
+}
+
+function normalizeOptionalValue(value?: string | null) {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function createStructureCode(prefix: string, count: number) {
+  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
 }
 
 export async function syncCompanyToEnterprise(
@@ -207,13 +240,18 @@ export async function syncEmployeeToEnterprise(
     deductions: Record<string, number>;
     created_at?: string;
     updated_at?: string;
-  }
+  },
+  overrides: EmployeeEnterpriseOverrides = {}
 ) {
   const now = new Date().toISOString();
   await syncCompanyShellIfMissing(client, employee.company_id);
 
-  const departmentId = await ensureDepartment(client, employee.company_id, employee.department);
-  const payrollGroupId = await ensureDefaultPayrollGroup(client, employee.company_id);
+  const departmentId = overrides.departmentId ?? await ensureDepartment(client, employee.company_id, employee.department);
+  const payrollGroupId = overrides.payrollGroupId ?? await ensureDefaultPayrollGroup(client, employee.company_id);
+  const branchId = normalizeOptionalValue(overrides.branchId);
+  const costCenterId = normalizeOptionalValue(overrides.costCenterId);
+  const jobGrade = normalizeOptionalValue(overrides.jobGrade);
+  const workLocation = normalizeOptionalValue(overrides.workLocation);
 
   const { error: profileError } = await client
     .schema('hr')
@@ -262,9 +300,13 @@ export async function syncEmployeeToEnterprise(
       .schema('hr')
       .from('employment_records')
       .update({
+        branch_id: branchId,
         department_id: departmentId,
+        cost_center_id: costCenterId,
         payroll_group_id: payrollGroupId,
         job_title: employee.position,
+        job_grade: jobGrade,
+        work_location: workLocation,
         employment_type: employee.employment_type,
       })
       .eq('id', employmentExisting.id);
@@ -276,9 +318,13 @@ export async function syncEmployeeToEnterprise(
       .insert({
         company_id: employee.company_id,
         employee_id: employee.id,
+        branch_id: branchId,
         department_id: departmentId,
+        cost_center_id: costCenterId,
         payroll_group_id: payrollGroupId,
         job_title: employee.position,
+        job_grade: jobGrade,
+        work_location: workLocation,
         employment_type: employee.employment_type,
         join_date: employee.joining_date,
         effective_from: employee.joining_date,
@@ -348,20 +394,241 @@ async function syncCompanyShellIfMissing(client: UntypedClient, companyId: strin
 }
 
 export async function getCompanyStructure(client: UntypedClient, companyId: string) {
-  const [departmentsResult, payrollGroupsResult] = await Promise.all([
-    client.schema('core').from('departments').select('id,name,department_code').eq('company_id', companyId).order('name'),
-    client.schema('core').from('payroll_groups').select('id,name,group_code,pay_frequency,is_default').eq('company_id', companyId).order('name'),
+  const [branchesResult, departmentsResult, costCentersResult, payrollGroupsResult] = await Promise.all([
+    client.schema('core').from('branches').select('id,name,branch_code,location,is_active').eq('company_id', companyId).order('name'),
+    client
+      .schema('core')
+      .from('departments')
+      .select('id,name,department_code,parent_department_id,branch_id,is_active')
+      .eq('company_id', companyId)
+      .order('name'),
+    client
+      .schema('core')
+      .from('cost_centers')
+      .select('id,name,cost_center_code,department_id,branch_id,is_active')
+      .eq('company_id', companyId)
+      .order('name'),
+    client
+      .schema('core')
+      .from('payroll_groups')
+      .select('id,name,group_code,pay_frequency,is_default,is_active,branch_id,department_id')
+      .eq('company_id', companyId)
+      .order('name'),
   ]);
 
+  if (branchesResult.error) {
+    throw new Error(branchesResult.error.message);
+  }
   if (departmentsResult.error) {
     throw new Error(departmentsResult.error.message);
+  }
+  if (costCentersResult.error) {
+    throw new Error(costCentersResult.error.message);
   }
   if (payrollGroupsResult.error) {
     throw new Error(payrollGroupsResult.error.message);
   }
 
   return {
+    branches: branchesResult.data ?? [],
     departments: departmentsResult.data ?? [],
+    costCenters: costCentersResult.data ?? [],
     payrollGroups: payrollGroupsResult.data ?? [],
   };
+}
+
+export async function getEmployeeEnterpriseContext(client: UntypedClient, companyId: string, employeeId: string) {
+  const { data, error } = await client
+    .schema('hr')
+    .from('employment_records')
+    .select('branch_id,department_id,cost_center_id,payroll_group_id,job_grade,work_location')
+    .eq('company_id', companyId)
+    .eq('employee_id', employeeId)
+    .eq('is_current', true)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    branchId: (data?.branch_id as string | null | undefined) ?? null,
+    departmentId: (data?.department_id as string | null | undefined) ?? null,
+    costCenterId: (data?.cost_center_id as string | null | undefined) ?? null,
+    payrollGroupId: (data?.payroll_group_id as string | null | undefined) ?? null,
+    jobGrade: (data?.job_grade as string | null | undefined) ?? null,
+    workLocation: (data?.work_location as string | null | undefined) ?? null,
+  };
+}
+
+async function countStructureRows(client: UntypedClient, table: 'branches' | 'departments' | 'cost_centers' | 'payroll_groups', companyId: string) {
+  const { count, error } = await client.schema('core').from(table).select('*', { count: 'exact', head: true }).eq('company_id', companyId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return count ?? 0;
+}
+
+export async function createCompanyStructureItem(client: UntypedClient, companyId: string, mutation: CompanyStructureMutation) {
+  const now = new Date().toISOString();
+
+  if (mutation.entityType === 'branch') {
+    const count = await countStructureRows(client, 'branches', companyId);
+    const { error } = await client.schema('core').from('branches').insert({
+      company_id: companyId,
+      branch_code: normalizeOptionalValue(mutation.code) ?? createStructureCode('BR', count),
+      name: mutation.name.trim(),
+      location: normalizeOptionalValue(mutation.location),
+      is_active: mutation.isActive ?? true,
+      created_at: now,
+      updated_at: now,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (mutation.entityType === 'department') {
+    const count = await countStructureRows(client, 'departments', companyId);
+    const { error } = await client.schema('core').from('departments').insert({
+      company_id: companyId,
+      department_code: normalizeOptionalValue(mutation.code) ?? createStructureCode('DEPT', count),
+      name: mutation.name.trim(),
+      parent_department_id: normalizeOptionalValue(mutation.parentDepartmentId),
+      branch_id: normalizeOptionalValue(mutation.branchId),
+      is_active: mutation.isActive ?? true,
+      created_at: now,
+      updated_at: now,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (mutation.entityType === 'costCenter') {
+    const count = await countStructureRows(client, 'cost_centers', companyId);
+    const { error } = await client.schema('core').from('cost_centers').insert({
+      company_id: companyId,
+      cost_center_code: normalizeOptionalValue(mutation.code) ?? createStructureCode('CC', count),
+      name: mutation.name.trim(),
+      department_id: normalizeOptionalValue(mutation.departmentId),
+      branch_id: normalizeOptionalValue(mutation.branchId),
+      is_active: mutation.isActive ?? true,
+      created_at: now,
+      updated_at: now,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const normalizedDefault = mutation.isDefault ?? false;
+  if (normalizedDefault) {
+    const { error: resetError } = await client
+      .schema('core')
+      .from('payroll_groups')
+      .update({ is_default: false, updated_at: now })
+      .eq('company_id', companyId);
+    if (resetError) throw new Error(resetError.message);
+  }
+
+  const count = await countStructureRows(client, 'payroll_groups', companyId);
+  const { error } = await client.schema('core').from('payroll_groups').insert({
+    company_id: companyId,
+    group_code: normalizeOptionalValue(mutation.code) ?? createStructureCode('PAY', count),
+    name: mutation.name.trim(),
+    pay_frequency: mutation.payFrequency ?? 'monthly',
+    branch_id: normalizeOptionalValue(mutation.branchId),
+    department_id: normalizeOptionalValue(mutation.departmentId),
+    is_default: normalizedDefault,
+    is_active: mutation.isActive ?? true,
+    created_at: now,
+    updated_at: now,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateCompanyStructureItem(client: UntypedClient, companyId: string, mutation: CompanyStructureMutation) {
+  if (!mutation.id) {
+    throw new Error('A structure item id is required.');
+  }
+
+  const now = new Date().toISOString();
+
+  if (mutation.entityType === 'branch') {
+    const { error } = await client
+      .schema('core')
+      .from('branches')
+      .update({
+        branch_code: normalizeOptionalValue(mutation.code) ?? undefined,
+        name: mutation.name.trim(),
+        location: normalizeOptionalValue(mutation.location),
+        is_active: mutation.isActive ?? true,
+        updated_at: now,
+      })
+      .eq('company_id', companyId)
+      .eq('id', mutation.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (mutation.entityType === 'department') {
+    const { error } = await client
+      .schema('core')
+      .from('departments')
+      .update({
+        department_code: normalizeOptionalValue(mutation.code) ?? undefined,
+        name: mutation.name.trim(),
+        parent_department_id: normalizeOptionalValue(mutation.parentDepartmentId),
+        branch_id: normalizeOptionalValue(mutation.branchId),
+        is_active: mutation.isActive ?? true,
+        updated_at: now,
+      })
+      .eq('company_id', companyId)
+      .eq('id', mutation.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  if (mutation.entityType === 'costCenter') {
+    const { error } = await client
+      .schema('core')
+      .from('cost_centers')
+      .update({
+        cost_center_code: normalizeOptionalValue(mutation.code) ?? undefined,
+        name: mutation.name.trim(),
+        department_id: normalizeOptionalValue(mutation.departmentId),
+        branch_id: normalizeOptionalValue(mutation.branchId),
+        is_active: mutation.isActive ?? true,
+        updated_at: now,
+      })
+      .eq('company_id', companyId)
+      .eq('id', mutation.id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const normalizedDefault = mutation.isDefault ?? false;
+  if (normalizedDefault) {
+    const { error: resetError } = await client
+      .schema('core')
+      .from('payroll_groups')
+      .update({ is_default: false, updated_at: now })
+      .eq('company_id', companyId);
+    if (resetError) throw new Error(resetError.message);
+  }
+
+  const { error } = await client
+    .schema('core')
+    .from('payroll_groups')
+    .update({
+      group_code: normalizeOptionalValue(mutation.code) ?? undefined,
+      name: mutation.name.trim(),
+      pay_frequency: mutation.payFrequency ?? 'monthly',
+      branch_id: normalizeOptionalValue(mutation.branchId),
+      department_id: normalizeOptionalValue(mutation.departmentId),
+      is_default: normalizedDefault,
+      is_active: mutation.isActive ?? true,
+      updated_at: now,
+    })
+    .eq('company_id', companyId)
+    .eq('id', mutation.id);
+  if (error) throw new Error(error.message);
 }
