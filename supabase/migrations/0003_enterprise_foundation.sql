@@ -348,7 +348,8 @@ insert into core.companies (
 )
 select
   id,
-  lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g')),
+  trim(both '-' from coalesce(nullif(lower(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g')), ''), 'company'))
+    || '-' || left(id::text, 8),
   name,
   name,
   registration_number,
