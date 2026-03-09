@@ -13,16 +13,16 @@ values
   null,
   'KE',
   'paye',
-  'Kenya PAYE bands',
-  '2026.01',
-  '2026-01-01',
+  'Kenya resident PAYE bands',
+  '2026.03',
+  '2026-03-01',
   '{
-    "incomeTaxBrackets": [
+    "payeBrackets": [
       { "min": 0, "max": 24000, "rate": 0.10 },
-      { "min": 24001, "max": 48000, "rate": 0.15 },
-      { "min": 48001, "max": 100000, "rate": 0.20 },
-      { "min": 100001, "max": 150000, "rate": 0.25 },
-      { "min": 150001, "max": 999999999, "rate": 0.30 }
+      { "min": 24000, "max": 32333, "rate": 0.25 },
+      { "min": 32333, "max": 500000, "rate": 0.30 },
+      { "min": 500000, "max": 800000, "rate": 0.325 },
+      { "min": 800000, "max": 999999999, "rate": 0.35 }
     ]
   }'::jsonb,
   true
@@ -31,13 +31,14 @@ values
   null,
   'KE',
   'nssf',
-  'Kenya NSSF employee contribution',
-  '2026.01',
-  '2026-01-01',
+  'Kenya NSSF Year 4 contributions',
+  '2026.02',
+  '2026-02-01',
   '{
-    "rate": 0.06,
-    "min": 100,
-    "max": 18000
+    "lowerLimit": 9000,
+    "upperLimit": 108000,
+    "employeeRate": 0.06,
+    "employerRate": 0.06
   }'::jsonb,
   true
 ),
@@ -45,23 +46,25 @@ values
   null,
   'KE',
   'shif',
-  'Kenya health contribution brackets',
-  '2026.01',
-  '2026-01-01',
+  'Kenya SHIF employee contribution',
+  '2026.03',
+  '2026-03-01',
   '{
-    "healthContributionBrackets": [
-      { "min": 0, "max": 5999, "rate": 0.025, "fixed": 150 },
-      { "min": 6000, "max": 9999, "rate": 0.025, "fixed": 300 },
-      { "min": 10000, "max": 14999, "rate": 0.025, "fixed": 400 },
-      { "min": 15000, "max": 19999, "rate": 0.025, "fixed": 500 },
-      { "min": 20000, "max": 24999, "rate": 0.025, "fixed": 600 },
-      { "min": 25000, "max": 29999, "rate": 0.025, "fixed": 750 },
-      { "min": 30000, "max": 34999, "rate": 0.025, "fixed": 850 },
-      { "min": 35000, "max": 39999, "rate": 0.025, "fixed": 900 },
-      { "min": 40000, "max": 44999, "rate": 0.025, "fixed": 950 },
-      { "min": 45000, "max": 49999, "rate": 0.025, "fixed": 1000 },
-      { "min": 50000, "max": 100000, "rate": 0.025, "fixed": 1700 }
-    ]
+    "rate": 0.0275,
+    "minimumContribution": 300
+  }'::jsonb,
+  true
+),
+(
+  null,
+  'KE',
+  'housing_levy',
+  'Kenya affordable housing levy',
+  '2026.03',
+  '2026-03-01',
+  '{
+    "employeeRate": 0.015,
+    "employerRate": 0.015
   }'::jsonb,
   true
 ),
@@ -70,12 +73,15 @@ values
   'KE',
   'relief',
   'Kenya payroll reliefs',
-  '2026.01',
-  '2026-01-01',
+  '2026.03',
+  '2026-03-01',
   '{
     "personalRelief": 2400,
-    "insuranceReliefRate": 0.05,
-    "insuranceReliefMaxAnnual": 60000
+    "insuranceReliefRate": 0.15,
+    "insuranceReliefMaxAnnual": 60000,
+    "deductNssfFromTaxableIncome": true,
+    "deductHealthFundFromTaxableIncome": true,
+    "deductHousingLevyFromTaxableIncome": true
   }'::jsonb,
   true
 )

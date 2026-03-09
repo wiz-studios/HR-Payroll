@@ -35,6 +35,27 @@ export async function POST(request: Request) {
 
   const now = new Date().toISOString();
   const calculations = calculateBulkPayroll(employees, undefined, statutoryConfig);
+  const validationFailures = employees
+    .map((employee) => ({
+      employee,
+      result: calculations.get(employee.id),
+    }))
+    .filter((entry) => (entry.result?.validationErrors.length ?? 0) > 0)
+    .map((entry) => ({
+      employeeId: entry.employee.id,
+      employeeNumber: entry.employee.employeeNumber,
+      errors: entry.result?.validationErrors ?? [],
+    }));
+
+  if (validationFailures.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'Payroll validation failed. Resolve employee-level calculation issues before creating the run.',
+        validationFailures,
+      },
+      { status: 400 }
+    );
+  }
 
   const { data: payroll, error: payrollError } = await admin
     .schema('HR')
@@ -104,6 +125,7 @@ export async function POST(request: Request) {
       grossPay: detailRows.reduce((sum, row) => sum + row.gross_pay, 0),
       totalDeductions: detailRows.reduce((sum, row) => sum + row.total_deductions, 0),
       netPay: detailRows.reduce((sum, row) => sum + row.net_pay, 0),
+      statutoryConfigVersion: statutoryConfig.version,
       statutoryConfig,
     },
   });

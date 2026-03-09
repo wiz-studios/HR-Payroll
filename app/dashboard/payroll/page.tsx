@@ -106,9 +106,29 @@ export default function PayrollPage() {
     details.forEach((detail) => {
       calculations.set(detail.employeeId, {
         basicSalary: detail.basicSalary,
-        allowances: { total: detail.allowancesTotal, breakdown: detail.allowanceBreakdown },
+        allowances: { taxableTotal: detail.allowancesTotal, nonTaxableTotal: 0, total: detail.allowancesTotal, breakdown: detail.allowanceBreakdown },
         grossSalary: detail.grossPay,
         deductions: {
+          employeeStatutory: {
+            nssf: detail.nssfAmount,
+            healthFund: detail.nhifAmount,
+            housingLevy: Number(detail.otherDeductionsBreakdown?.housingLevy ?? 0),
+            incomeTax: detail.incomeTaxAmount,
+            total: detail.nssfAmount + detail.nhifAmount + detail.incomeTaxAmount + Number(detail.otherDeductionsBreakdown?.housingLevy ?? 0),
+          },
+          employerStatutory: {
+            nssf: 0,
+            housingLevy: 0,
+            total: 0,
+          },
+          preTax: {
+            total: 0,
+            breakdown: {},
+          },
+          postTax: {
+            total: detail.otherDeductionsTotal,
+            breakdown: detail.otherDeductionsBreakdown,
+          },
           nssf: detail.nssfAmount,
           nhif: detail.nhifAmount,
           incomeTax: detail.incomeTaxAmount,
@@ -116,9 +136,12 @@ export default function PayrollPage() {
           total: detail.totalDeductions,
         },
         netPay: detail.netPay,
+        employerCost: detail.grossPay,
         taxableIncome: 0,
         personalRelief: 0,
         insuranceRelief: 0,
+        statutoryConfigVersion: 'legacy-run',
+        validationErrors: [],
       });
     });
 
@@ -483,8 +506,12 @@ export default function PayrollPage() {
                   <span className="font-semibold text-foreground">{formatCurrency(summary?.totalNSSF ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">NHIF</span>
-                  <span className="font-semibold text-foreground">{formatCurrency(summary?.totalNHIF ?? 0)}</span>
+                  <span className="text-muted-foreground">SHIF / SHA</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(summary?.totalHealthFund ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Housing Levy</span>
+                  <span className="font-semibold text-foreground">{formatCurrency(summary?.totalHousingLevyEmployee ?? 0)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">PAYE</span>

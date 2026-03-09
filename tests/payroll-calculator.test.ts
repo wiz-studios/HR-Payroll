@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateHealthFund,
   calculateIncomeTax,
   calculateNSSF,
   calculatePayroll,
@@ -29,7 +30,7 @@ function createEmployee(overrides: Partial<Employee> = {}): Employee {
     baseSalary: 100000,
     salaryFrequency: 'monthly',
     allowances: { housing: 20000, transport: 5000 },
-    deductions: { loan: 3000 },
+    deductions: { loan: 3000, insurancePremiums: 4000 },
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
@@ -37,7 +38,7 @@ function createEmployee(overrides: Partial<Employee> = {}): Employee {
 }
 
 describe('payroll-calculator', () => {
-  it('calculates a full payroll run using statutory config defaults', () => {
+  it('calculates current statutory deductions and employer cost', () => {
     const result = calculatePayroll({
       employee: createEmployee(),
     });
@@ -45,33 +46,38 @@ describe('payroll-calculator', () => {
     expect(result.basicSalary).toBe(100000);
     expect(result.allowances.total).toBe(25000);
     expect(result.grossSalary).toBe(125000);
-    expect(result.deductions.nssf).toBe(7500);
-    expect(result.deductions.nhif).toBe(1700);
-    expect(result.taxableIncome).toBe(115800);
-    expect(result.deductions.incomeTax).toBe(12950);
-    expect(result.deductions.other.total).toBe(3000);
-    expect(result.deductions.total).toBe(25150);
-    expect(result.netPay).toBe(99850);
+    expect(result.deductions.employeeStatutory.nssf).toBe(6480);
+    expect(result.deductions.employeeStatutory.healthFund).toBe(3437.5);
+    expect(result.deductions.employeeStatutory.housingLevy).toBe(1875);
+    expect(result.taxableIncome).toBe(113207.5);
+    expect(result.deductions.employeeStatutory.incomeTax).toBe(25745.6);
+    expect(result.deductions.other.total).toBe(4875);
+    expect(result.deductions.total).toBe(40538.1);
+    expect(result.netPay).toBe(84461.9);
+    expect(result.deductions.employerStatutory.nssf).toBe(6480);
+    expect(result.deductions.employerStatutory.housingLevy).toBe(1875);
+    expect(result.employerCost).toBe(133355);
+    expect(result.validationErrors).toHaveLength(0);
+    expect(result.statutoryConfigVersion).toBe(DEFAULT_KENYA_PAYROLL_CONFIG.version);
   });
 
-  it('accepts statutory overrides without mutating the default config', () => {
+  it('bases insurance relief on premiums paid and surfaces negative net pay errors', () => {
     const result = calculatePayroll({
-      employee: createEmployee(),
-      statutoryConfig: {
-        personalRelief: 0,
-        insuranceReliefRate: 0,
-        insuranceReliefMaxAnnual: 0,
-      },
+      employee: createEmployee({
+        deductions: { loan: 120000, insurancePremiums: 20000 },
+      }),
     });
 
-    expect(result.deductions.incomeTax).toBe(20350);
-    expect(DEFAULT_KENYA_PAYROLL_CONFIG.personalRelief).toBe(2400);
-    expect(DEFAULT_KENYA_PAYROLL_CONFIG.insuranceReliefRate).toBe(0.05);
+    expect(result.insuranceRelief).toBe(3000);
+    expect(result.netPay).toBeLessThan(0);
+    expect(result.validationErrors[0]?.code).toBe('NEGATIVE_NET_PAY');
   });
 
-  it('handles edge bracket calculations and zero-pay NSSF correctly', () => {
+  it('uses 2026 PAYE and SHIF defaults on current thresholds', () => {
     expect(calculateIncomeTax(24000)).toBe(2400);
-    expect(calculateIncomeTax(48000)).toBe(6000);
-    expect(calculateNSSF(0)).toBe(0);
+    expect(calculateIncomeTax(32333)).toBe(4483.25);
+    expect(calculateHealthFund(8000)).toBe(300);
+    expect(calculateNSSF(108000)).toBe(6480);
+    expect(DEFAULT_KENYA_PAYROLL_CONFIG.insuranceReliefRate).toBe(0.15);
   });
 });
