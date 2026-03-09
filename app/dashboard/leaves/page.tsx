@@ -83,12 +83,16 @@ export default function LeavesPage() {
       if (!mounted || !currentSession) return;
       setSession(currentSession);
 
-      const [companyEmployees, leaveRequests, approvalsResponse] = await Promise.all([
+      const [companyEmployees, leaveResponse, approvalsResponse] = await Promise.all([
         db.getEmployeesByCompany(currentSession.companyId),
-        db.getLeaveRequestsByCompany(currentSession.companyId),
-        fetch('/api/approvals'),
+        fetch('/api/leave-requests'),
+        currentSession.userRole === 'employee' ? Promise.resolve(null) : fetch('/api/approvals'),
       ]);
-      const approvalsPayload = (await approvalsResponse.json().catch(() => ({ items: [] }))) as {
+      const leavePayload = (await leaveResponse.json().catch(() => ({ leaveRequests: [] }))) as {
+        leaveRequests?: LeaveRequest[];
+      };
+      const approvalsPayload = approvalsResponse
+        ? ((await approvalsResponse.json().catch(() => ({ items: [] }))) as {
         items?: Array<{
           id: string;
           entityType: string;
@@ -97,7 +101,8 @@ export default function LeavesPage() {
           payload: LeaveApprovalRequest['payload'];
           actions?: LeaveApprovalRequest['actions'];
         }>;
-      };
+      })
+        : { items: [] };
       if (!mounted) return;
 
       const leaveApprovals = (approvalsPayload.items ?? [])
@@ -111,8 +116,12 @@ export default function LeavesPage() {
 
       setEmployees(companyEmployees);
       setApprovalRequests(leaveApprovals);
+      const selfEmployee = companyEmployees.find((item) => item.email === currentSession.userEmail) ?? null;
+      if (selfEmployee && currentSession.userRole === 'employee') {
+        setFormData((current) => ({ ...current, employeeId: selfEmployee.id }));
+      }
       setLeaves(
-        leaveRequests.map((leave) => {
+        (leavePayload.leaveRequests ?? []).map((leave) => {
           const employee = companyEmployees.find((item) => item.id === leave.employeeId);
           return {
             id: leave.id,
@@ -136,6 +145,7 @@ export default function LeavesPage() {
 
   const pendingLeaves = useMemo(() => leaves.filter((leave) => leave.status === 'pending').length, [leaves]);
   const canManageLeaves = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const canCreateLeave = Boolean(session);
   const latestApprovalByLeave = useMemo(
     () =>
       approvalRequests.reduce<Record<string, LeaveApprovalRequest>>((accumulator, request) => {
@@ -272,15 +282,19 @@ export default function LeavesPage() {
     <div className="space-y-8">
       <PageHeader
         eyebrow="Leave Desk"
-        title="Leave management"
-        description="Track approved and pending absences before they affect payroll planning, staffing, or month-end approvals."
+        title={canManageLeaves ? 'Leave management' : 'My leave'}
+        description={
+          canManageLeaves
+            ? 'Track approved and pending absences before they affect payroll planning, staffing, or month-end approvals.'
+            : 'Request time away, track approval posture, and keep your own absence history in one place.'
+        }
         actions={
-          canManageLeaves ? (
+          canCreateLeave ? (
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
             <DialogTrigger asChild>
               <Button className="rounded-2xl px-5">
                 <Plus className="mr-2 h-4 w-4" />
-                New leave request
+                {canManageLeaves ? 'New leave request' : 'Request leave'}
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-[28px] border-border/70 bg-background sm:max-w-2xl">
@@ -290,20 +304,31 @@ export default function LeavesPage() {
               </DialogHeader>
               <form onSubmit={handleSubmitLeave} className="space-y-4">
                 <div>
-                  <Label htmlFor="employee">Employee</Label>
-                  <select
-                    id="employee"
-                    value={formData.employeeId}
-                    onChange={(event) => setFormData((current) => ({ ...current, employeeId: event.target.value }))}
-                    className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm outline-none ring-ring/50 transition focus:ring-2"
-                  >
-                    <option value="">Select employee</option>
-                    {employees.map((employee) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.firstName} {employee.lastName}
-                      </option>
-                    ))}
-                  </select>
+                  {canManageLeaves ? (
+                    <>
+                      <Label htmlFor="employee">Employee</Label>
+                      <select
+                        id="employee"
+                        value={formData.employeeId}
+                        onChange={(event) => setFormData((current) => ({ ...current, employeeId: event.target.value }))}
+                        className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm outline-none ring-ring/50 transition focus:ring-2"
+                      >
+                        <option value="">Select employee</option>
+                        {employees.map((employee) => (
+                          <option key={employee.id} value={employee.id}>
+                            {employee.firstName} {employee.lastName}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <Label>Employee</Label>
+                      <div className="mt-2 rounded-2xl border border-border/70 bg-card px-4 py-3 text-sm text-foreground">
+                        {employees.find((employee) => employee.id === formData.employeeId)?.firstName ?? session.userName}
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <div>
@@ -451,7 +476,7 @@ export default function LeavesPage() {
                     </Button>
                   </div>
                 ) : (
-                  <span className="text-xs text-muted-foreground">No action</span>
+                  <span className="text-xs text-muted-foreground">{canManageLeaves ? 'No action' : 'Submitted'}</span>
                 )
               ),
             },

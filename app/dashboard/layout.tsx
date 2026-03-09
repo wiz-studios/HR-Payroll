@@ -12,6 +12,7 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   FileBarChart2,
+  FileText,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -39,8 +40,10 @@ interface DashboardLayoutProps {
 
 const navItems = [
   { label: 'Overview', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
+  { label: 'My Profile', path: '/dashboard/profile', icon: UserRound, roles: ['admin', 'manager', 'employee'] },
+  { label: 'Payslips', path: '/dashboard/payslips', icon: FileText, roles: ['admin', 'manager', 'employee'] },
   { label: 'Employees', path: '/dashboard/employees', icon: Users, roles: ['admin', 'manager'] },
-  { label: 'Leave Desk', path: '/dashboard/leaves', icon: BriefcaseBusiness, roles: ['admin', 'manager'] },
+  { label: 'Leave Desk', path: '/dashboard/leaves', icon: BriefcaseBusiness, roles: ['admin', 'manager', 'employee'] },
   { label: 'Payroll Run', path: '/dashboard/payroll', icon: CircleDollarSign, roles: ['admin', 'manager'] },
   { label: 'Approvals', path: '/dashboard/approvals', icon: Bell, roles: ['admin', 'manager'] },
   { label: 'Reports', path: '/dashboard/reports', icon: FileBarChart2, roles: ['admin', 'manager'] },

@@ -104,6 +104,54 @@ export default function DashboardPage() {
   )
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
+  const quickActions =
+    session.userRole === 'employee'
+      ? [
+          {
+            title: 'Open my profile',
+            copy: 'Review your payroll identity and submit bank-detail change requests.',
+            href: '/dashboard/profile',
+            icon: Users,
+          },
+          {
+            title: 'Request leave',
+            copy: 'Raise time-off requests and track approval posture.',
+            href: '/dashboard/leaves',
+            icon: BriefcaseBusiness,
+          },
+          {
+            title: 'Download payslips',
+            copy: 'Open current and prior payroll statements.',
+            href: '/dashboard/payslips',
+            icon: ClipboardCheck,
+          },
+        ]
+      : [
+          {
+            title: 'Manage employees',
+            copy: 'Add headcount, update contracts, and review bank details.',
+            href: '/dashboard/employees',
+            icon: Users,
+          },
+          {
+            title: 'Review leave desk',
+            copy: 'Track upcoming absences before they affect payroll.',
+            href: '/dashboard/leaves',
+            icon: BriefcaseBusiness,
+          },
+          {
+            title: 'Work approvals',
+            copy: 'Review leave, payroll, and employee change requests from one queue.',
+            href: '/dashboard/approvals',
+            icon: BadgeDollarSign,
+          },
+          {
+            title: 'Open reports',
+            copy: 'Inspect payroll, tax, and disbursement summaries.',
+            href: '/dashboard/reports',
+            icon: ClipboardCheck,
+          },
+        ];
 
   return (
     <div className="space-y-8">
@@ -218,31 +266,8 @@ export default function DashboardPage() {
           <div className="soft-panel p-6">
             <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Quick Actions</p>
             <div className="mt-5 space-y-3">
-              {[
-                {
-                  title: 'Manage employees',
-                  copy: 'Add headcount, update contracts, and review bank details.',
-                  href: '/dashboard/employees',
-                  icon: Users,
-                },
-                {
-                  title: 'Review leave desk',
-                  copy: 'Track upcoming absences before they affect payroll.',
-                  href: '/dashboard/leaves',
-                  icon: BriefcaseBusiness,
-                },
-                {
-                  title: 'Work approvals',
-                  copy: 'Review leave, payroll, and employee change requests from one queue.',
-                  href: '/dashboard/approvals',
-                  icon: BadgeDollarSign,
-                },
-                {
-                  title: 'Open reports',
-                  copy: 'Inspect payroll, tax, and disbursement summaries.',
-                  href: '/dashboard/reports',
-                  icon: ClipboardCheck,
-                },
+              {[ 
+                ...quickActions,
               ].map((item) => {
                 const Icon = item.icon;
                 return (

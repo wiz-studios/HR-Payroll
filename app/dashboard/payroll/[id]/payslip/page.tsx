@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { authService, AuthSession } from '@/lib/auth';
-import { db, PayrollDetail, Employee, Payroll } from '@/lib/db-schema';
+import { PayrollDetail, Employee, Payroll } from '@/lib/db-schema';
 import { formatCurrency, formatDate, getMonthName } from '@/lib/utils-hr';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -37,19 +37,19 @@ export default function PayslipPage() {
         return;
       }
 
-      const d = await db.getPayrollDetail(detailId);
-      if (d && d.companyId === sess.companyId) {
-        setDetail(d);
-
-        const [emp, p, company] = await Promise.all([
-          db.getEmployee(d.employeeId),
-          db.getPayroll(d.payrollId),
-          db.getCompany(sess.companyId),
-        ]);
-        if (!mounted) return;
-        setEmployee(emp || null);
-        setPayroll(p || null);
-        setCompanyTaxPin(company?.taxPin ?? null);
+      const response = await fetch(`/api/payslips/${detailId}`);
+      const payload = (await response.json().catch(() => ({}))) as {
+        detail?: PayrollDetail;
+        employee?: Employee;
+        payroll?: Payroll;
+        company?: { taxPin?: string };
+      };
+      if (!mounted) return;
+      if (response.ok && payload.detail && payload.employee && payload.payroll) {
+        setDetail(payload.detail);
+        setEmployee(payload.employee);
+        setPayroll(payload.payroll);
+        setCompanyTaxPin(payload.company?.taxPin ?? null);
       }
 
       setIsLoading(false);
