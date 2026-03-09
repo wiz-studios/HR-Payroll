@@ -8,6 +8,7 @@ import {
   BriefcaseBusiness,
   CircleDollarSign,
   ClipboardCheck,
+  FolderKanban,
   Users,
 } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
@@ -125,6 +126,12 @@ export default function DashboardPage() {
             href: '/dashboard/payslips',
             icon: ClipboardCheck,
           },
+          {
+            title: 'Open documents',
+            copy: 'Review contracts, letters, and HR files linked to your record.',
+            href: '/dashboard/documents',
+            icon: FolderKanban,
+          },
         ]
       : [
           {
@@ -151,6 +158,12 @@ export default function DashboardPage() {
             href: '/dashboard/reports',
             icon: ClipboardCheck,
           },
+          {
+            title: 'Review documents',
+            copy: 'Track contracts, letters, and employee-file coverage.',
+            href: '/dashboard/documents',
+            icon: FolderKanban,
+          },
         ];
 
   return (
@@ -162,12 +175,21 @@ export default function DashboardPage() {
         actions={
           <>
             <StatusPill label={todayLabel} tone="info" />
-            <Button asChild className="rounded-2xl px-5">
-              <Link href="/dashboard/payroll">
-                Open payroll run
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            {session.userRole === 'employee' ? (
+              <Button asChild className="rounded-2xl px-5">
+                <Link href="/dashboard/profile">
+                  Open profile
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <Button asChild className="rounded-2xl px-5">
+                <Link href="/dashboard/payroll">
+                  Open payroll run
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            )}
           </>
         }
       />

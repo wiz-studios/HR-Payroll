@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Landmark, ShieldCheck, UserRound } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
 import type { Employee } from '@/lib/hr/types';
@@ -216,6 +217,7 @@ export default function ProfilePage() {
             <TabsList>
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="banking">Banking</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
               <TabsTrigger value="requests">Requests</TabsTrigger>
             </TabsList>
 
@@ -255,6 +257,20 @@ export default function ProfilePage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="documents">
+              <div className="soft-panel flex flex-col gap-4 p-6 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Employee file access</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Open the document desk to review contracts, change letters, and other controlled HR records linked to your profile.
+                  </p>
+                </div>
+                <Button asChild className="rounded-2xl px-5">
+                  <Link href="/dashboard/documents">Open documents</Link>
+                </Button>
               </div>
             </TabsContent>
 

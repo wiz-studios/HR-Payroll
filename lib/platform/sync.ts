@@ -68,6 +68,67 @@ function stableJson(value: Record<string, number>) {
   );
 }
 
+async function upsertEmployeeUserLink(
+  client: UntypedClient,
+  companyId: string,
+  employeeId: string,
+  userId: string,
+  linkedVia: 'email_match' | 'sync' | 'manual'
+) {
+  const now = new Date().toISOString();
+
+  const { error: deactivateEmployeeLinksError } = await client
+    .schema('hr')
+    .from('employee_user_links')
+    .update({
+      is_active: false,
+      updated_at: now,
+    })
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .eq('employee_id', employeeId)
+    .neq('user_id', userId);
+
+  if (deactivateEmployeeLinksError) {
+    throw new Error(deactivateEmployeeLinksError.message);
+  }
+
+  const { error: deactivateUserLinksError } = await client
+    .schema('hr')
+    .from('employee_user_links')
+    .update({
+      is_active: false,
+      updated_at: now,
+    })
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .eq('user_id', userId)
+    .neq('employee_id', employeeId);
+
+  if (deactivateUserLinksError) {
+    throw new Error(deactivateUserLinksError.message);
+  }
+
+  const { error } = await client
+    .schema('hr')
+    .from('employee_user_links')
+    .upsert(
+      {
+        company_id: companyId,
+        employee_id: employeeId,
+        user_id: userId,
+        linked_via: linkedVia,
+        is_active: true,
+        updated_at: now,
+      },
+      { onConflict: 'company_id,employee_id,user_id' }
+    );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function syncCompanyToEnterprise(
   client: UntypedClient,
   company: {
@@ -143,6 +204,22 @@ export async function syncMembershipToEnterprise(
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  const { data: employeeProfile, error: profileError } = await client
+    .schema('hr')
+    .from('employee_profiles')
+    .select('id')
+    .eq('company_id', membership.company_id)
+    .ilike('work_email', membership.email)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  if (employeeProfile?.id) {
+    await upsertEmployeeUserLink(client, membership.company_id, employeeProfile.id as string, membership.user_id, 'sync');
   }
 }
 
@@ -304,6 +381,22 @@ export async function syncEmployeeToEnterprise(
 
   if (profileError) {
     throw new Error(profileError.message);
+  }
+
+  const { data: membership, error: membershipError } = await client
+    .schema('core')
+    .from('company_memberships')
+    .select('user_id')
+    .eq('company_id', employee.company_id)
+    .ilike('email', employee.email)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw new Error(membershipError.message);
+  }
+
+  if (membership?.user_id) {
+    await upsertEmployeeUserLink(client, employee.company_id, employee.id, membership.user_id as string, 'sync');
   }
 
   const { data: employmentExisting, error: employmentFindError } = await client
