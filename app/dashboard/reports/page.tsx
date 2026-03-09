@@ -31,10 +31,21 @@ interface PaymentReportRow {
   totalEmployees: number;
 }
 
+interface JournalReportRow {
+  payrollId: string;
+  payPeriodLabel: string;
+  status: string;
+  totalDebits: number;
+  totalCredits: number;
+  entryCount: number;
+  balanced: boolean;
+}
+
 export default function ReportsPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [paymentRows, setPaymentRows] = useState<PaymentReportRow[]>([]);
+  const [journalRows, setJournalRows] = useState<JournalReportRow[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -45,8 +56,12 @@ export default function ReportsPage() {
 
       const payrolls = await db.getPayrollsByCompany(currentSession.companyId);
       const paymentReportResponse = await fetch('/api/reports/payments');
+      const journalReportResponse = await fetch('/api/reports/journals');
       const paymentReportPayload = (await paymentReportResponse.json().catch(() => ({ items: [] }))) as {
         items?: PaymentReportRow[];
+      };
+      const journalReportPayload = (await journalReportResponse.json().catch(() => ({ items: [] }))) as {
+        items?: JournalReportRow[];
       };
       const reportRows = await Promise.all(payrolls
       .map((payroll) => {
@@ -64,6 +79,7 @@ export default function ReportsPage() {
       if (!mounted) return;
       setRows(reportRows.sort((a, b) => b.month.localeCompare(a.month)));
       setPaymentRows((paymentReportPayload.items ?? []).sort((a, b) => b.month.localeCompare(a.month)));
+      setJournalRows((journalReportPayload.items ?? []).sort((a, b) => b.payPeriodLabel.localeCompare(a.payPeriodLabel)));
     };
     void load();
     return () => {
@@ -194,6 +210,40 @@ export default function ReportsPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No payment batches have been created yet. Process and export a payroll cycle to start reconciliation reporting.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="soft-panel p-6">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Journal exports</p>
+            <div className="mt-5 space-y-3">
+              {journalRows.length > 0 ? (
+                journalRows.slice(0, 5).map((row) => (
+                  <div key={row.payrollId} className="rounded-[24px] border border-border/70 bg-card/70 p-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{getMonthName(row.payPeriodLabel)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {row.entryCount} journal lines · {row.status.replaceAll('_', ' ')}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">{formatCurrency(row.totalDebits)}</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                      {row.balanced ? 'Balanced journal' : 'Out-of-balance journal'} · credits {formatCurrency(row.totalCredits)}
+                    </p>
+                    <a
+                      href={`/api/payroll/${row.payrollId}/journal/export`}
+                      className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                      Export journal CSV
+                    </a>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No payroll journals are available yet. Generate payroll runs to expose accounting-ready journal entries.
                 </p>
               )}
             </div>
