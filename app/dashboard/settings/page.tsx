@@ -22,10 +22,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+interface CompanyStructure {
+  departments: Array<{ id: string; name: string; department_code: string }>;
+  payrollGroups: Array<{ id: string; name: string; group_code: string; pay_frequency: string; is_default: boolean }>;
+}
+
 export default function SettingsPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [structure, setStructure] = useState<CompanyStructure>({ departments: [], payrollGroups: [] });
   const [companyForm, setCompanyForm] = useState<Partial<Company>>({});
   const [userForm, setUserForm] = useState({
     email: '',
@@ -50,10 +56,21 @@ export default function SettingsPage() {
         db.getCompany(currentSession.companyId),
         db.getUsersByCompany(currentSession.companyId),
       ]);
+      const structureResponse = await fetch('/api/company-structure');
+      const structurePayload = (await structureResponse.json().catch(() => ({
+        departments: [],
+        payrollGroups: [],
+      }))) as CompanyStructure & { error?: string };
       if (!mounted) return;
       setCompany(currentCompany);
       setCompanyForm(currentCompany ?? {});
       setUsers(companyUsers);
+      if (structureResponse.ok) {
+        setStructure({
+          departments: structurePayload.departments ?? [],
+          payrollGroups: structurePayload.payrollGroups ?? [],
+        });
+      }
     };
     void load();
     return () => {
@@ -210,6 +227,23 @@ export default function SettingsPage() {
         <MetricCard label="Registration" value={company.registrationNumber} detail="Legal company reference" icon={<Building2 className="h-5 w-5" />} tone="neutral" />
       </section>
 
+      <section className="grid gap-4 md:grid-cols-2">
+        <MetricCard
+          label="Departments"
+          value={structure.departments.length}
+          detail="Seeded into the core organization model"
+          icon={<Building2 className="h-5 w-5" />}
+          tone="neutral"
+        />
+        <MetricCard
+          label="Payroll Groups"
+          value={structure.payrollGroups.length}
+          detail="Active payroll grouping in core"
+          icon={<Users className="h-5 w-5" />}
+          tone="primary"
+        />
+      </section>
+
       <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
         <div className="soft-panel p-6">
           <div className="mb-5 flex items-center justify-between">
@@ -315,6 +349,53 @@ export default function SettingsPage() {
               },
             ]}
           />
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <div className="soft-panel p-6">
+          <div className="mb-5">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Organization Model</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">Departments</h2>
+          </div>
+          <div className="space-y-3">
+            {structure.departments.length > 0 ? (
+              structure.departments.map((department) => (
+                <div key={department.id} className="rounded-[20px] border border-border/60 bg-card/70 px-4 py-3">
+                  <p className="font-medium text-foreground">{department.name}</p>
+                  <p className="text-xs text-muted-foreground">{department.department_code}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No departments are seeded yet in the core schema.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="soft-panel p-6">
+          <div className="mb-5">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Payroll Foundation</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">Payroll groups</h2>
+          </div>
+          <div className="space-y-3">
+            {structure.payrollGroups.length > 0 ? (
+              structure.payrollGroups.map((group) => (
+                <div key={group.id} className="rounded-[20px] border border-border/60 bg-card/70 px-4 py-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="font-medium text-foreground">{group.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {group.group_code} · {group.pay_frequency}
+                      </p>
+                    </div>
+                    <StatusPill label={group.is_default ? 'Default' : 'Active'} tone={group.is_default ? 'info' : 'neutral'} />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No payroll groups are seeded yet in the core schema.</p>
+            )}
+          </div>
         </div>
       </section>
     </div>

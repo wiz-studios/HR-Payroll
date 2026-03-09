@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
-import { getUsersByCompany, insertAuditLog, mapUser } from '@/lib/hr/repository';
+import { insertAuditLog, mapUser } from '@/lib/hr/repository';
+import { syncMembershipToEnterprise } from '@/lib/platform/sync';
 
 function generateTemporaryPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
@@ -58,6 +59,26 @@ export async function POST(request: Request) {
   if (error || !data) {
     await admin.auth.admin.deleteUser(authResult.user.id);
     return NextResponse.json({ error: error?.message ?? 'Unable to attach user to company.' }, { status: 400 });
+  }
+
+  try {
+    await syncMembershipToEnterprise(admin, {
+      company_id: auth.session.companyId,
+      user_id: authResult.user.id,
+      email: payload.email,
+      first_name: payload.firstName,
+      last_name: payload.lastName,
+      role: payload.role,
+      created_at: now,
+      updated_at: now,
+    });
+  } catch (syncError) {
+    await admin.schema('HR').from('company_users').delete().eq('id', data.id);
+    await admin.auth.admin.deleteUser(authResult.user.id);
+    return NextResponse.json(
+      { error: syncError instanceof Error ? syncError.message : 'Unable to sync team member to enterprise schema.' },
+      { status: 400 }
+    );
   }
 
   await insertAuditLog(admin, {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapCompany } from '@/lib/hr/repository';
+import { syncCompanyToEnterprise } from '@/lib/platform/sync';
 
 export async function PATCH(request: Request) {
   const auth = await requireServerSession();
@@ -33,6 +34,15 @@ export async function PATCH(request: Request) {
 
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? 'Unable to update company.' }, { status: 400 });
+  }
+
+  try {
+    await syncCompanyToEnterprise(admin, data);
+  } catch (syncError) {
+    return NextResponse.json(
+      { error: syncError instanceof Error ? syncError.message : 'Company updated in HR but failed to sync to enterprise schema.' },
+      { status: 400 }
+    );
   }
 
   await insertAuditLog(admin, {

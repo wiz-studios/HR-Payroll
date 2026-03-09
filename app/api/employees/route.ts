@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapEmployee } from '@/lib/hr/repository';
+import { syncEmployeeToEnterprise } from '@/lib/platform/sync';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
@@ -45,6 +46,16 @@ export async function POST(request: Request) {
 
   if (error || !data) {
     return NextResponse.json({ error: error?.message ?? 'Unable to create employee.' }, { status: 400 });
+  }
+
+  try {
+    await syncEmployeeToEnterprise(admin, data);
+  } catch (syncError) {
+    await admin.schema('HR').from('employees').delete().eq('id', data.id);
+    return NextResponse.json(
+      { error: syncError instanceof Error ? syncError.message : 'Unable to sync employee to enterprise schema.' },
+      { status: 400 }
+    );
   }
 
   await insertAuditLog(admin, {
