@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapLeaveRequest } from '@/lib/hr/repository';
+import { createLeaveApprovalRequest, getLeaveApprovalRequests } from '@/lib/platform/workflow';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
@@ -41,5 +42,16 @@ export async function POST(request: Request) {
     after: data,
   });
 
-  return NextResponse.json({ leaveRequest: mapLeaveRequest(data) });
+  try {
+    await createLeaveApprovalRequest(admin, auth.session.companyId, data.id, auth.session.userId);
+    const requests = await getLeaveApprovalRequests(admin, auth.session.companyId, data.id);
+    return NextResponse.json({ leaveRequest: mapLeaveRequest(data), requests });
+  } catch (workflowError) {
+    return NextResponse.json(
+      {
+        error: workflowError instanceof Error ? workflowError.message : 'Leave request was created but workflow setup failed.',
+      },
+      { status: 400 }
+    );
+  }
 }

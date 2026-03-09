@@ -39,8 +39,11 @@ export default function DashboardPage() {
 
       const employees = await db.getEmployeesByCompany(currentSession.companyId);
       const payrolls = await db.getPayrollsByCompany(currentSession.companyId);
+      const approvalsResponse = await fetch('/api/approvals?status=pending');
+      const approvalsPayload = (await approvalsResponse.json().catch(() => ({ items: [] }))) as {
+        items?: Array<{ id: string }>;
+      };
       const activePayrolls = payrolls.filter((payroll) => ['draft', 'pending_approval', 'approved'].includes(payroll.status));
-      const pendingApprovals = payrolls.filter((payroll) => payroll.status === 'pending_approval');
       const payrollDetailGroups = await Promise.all(activePayrolls.map((payroll) => db.getPayrollDetailsByPayroll(payroll.id)));
       const payrollDetails = payrollDetailGroups.flat();
 
@@ -48,7 +51,7 @@ export default function DashboardPage() {
       setStats({
         totalEmployees: employees.length,
         activePayrolls: activePayrolls.length,
-        pendingApprovals: pendingApprovals.length,
+        pendingApprovals: approvalsResponse.ok ? (approvalsPayload.items ?? []).length : 0,
         totalGrossSalaries: payrollDetails.reduce((sum, detail) => sum + detail.grossPay, 0),
       });
     };
@@ -227,6 +230,12 @@ export default function DashboardPage() {
                   copy: 'Track upcoming absences before they affect payroll.',
                   href: '/dashboard/leaves',
                   icon: BriefcaseBusiness,
+                },
+                {
+                  title: 'Work approvals',
+                  copy: 'Review leave, payroll, and employee change requests from one queue.',
+                  href: '/dashboard/approvals',
+                  icon: BadgeDollarSign,
                 },
                 {
                   title: 'Open reports',

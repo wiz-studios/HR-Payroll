@@ -42,6 +42,7 @@ const navItems = [
   { label: 'Employees', path: '/dashboard/employees', icon: Users, roles: ['admin', 'manager'] },
   { label: 'Leave Desk', path: '/dashboard/leaves', icon: BriefcaseBusiness, roles: ['admin', 'manager'] },
   { label: 'Payroll Run', path: '/dashboard/payroll', icon: CircleDollarSign, roles: ['admin', 'manager'] },
+  { label: 'Approvals', path: '/dashboard/approvals', icon: Bell, roles: ['admin', 'manager'] },
   { label: 'Reports', path: '/dashboard/reports', icon: FileBarChart2, roles: ['admin', 'manager'] },
   { label: 'Compliance', path: '/dashboard/compliance', icon: ClipboardCheck, roles: ['admin'] },
   { label: 'Settings', path: '/dashboard/settings', icon: Settings, roles: ['admin'] },

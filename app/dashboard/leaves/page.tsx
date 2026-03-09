@@ -34,6 +34,26 @@ interface Leave {
   reason: string;
 }
 
+interface LeaveApprovalRequest {
+  id: string;
+  status: string;
+  payload: {
+    leaveRequestId: string;
+    employeeId: string;
+    leaveType: string;
+    startDate: string;
+    endDate: string;
+    days: number;
+    reason: string;
+  };
+  actions: Array<{
+    action: string;
+    actorUserId: string | null;
+    comments: string | null;
+    createdAt: string;
+  }>;
+}
+
 function leaveTone(status: Leave['status']) {
   if (status === 'approved') return 'success' as const;
   if (status === 'rejected') return 'danger' as const;
@@ -44,6 +64,7 @@ export default function LeavesPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaves, setLeaves] = useState<Leave[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<LeaveApprovalRequest[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -62,11 +83,34 @@ export default function LeavesPage() {
       if (!mounted || !currentSession) return;
       setSession(currentSession);
 
-      const companyEmployees = await db.getEmployeesByCompany(currentSession.companyId);
-      const leaveRequests = await db.getLeaveRequestsByCompany(currentSession.companyId);
+      const [companyEmployees, leaveRequests, approvalsResponse] = await Promise.all([
+        db.getEmployeesByCompany(currentSession.companyId),
+        db.getLeaveRequestsByCompany(currentSession.companyId),
+        fetch('/api/approvals'),
+      ]);
+      const approvalsPayload = (await approvalsResponse.json().catch(() => ({ items: [] }))) as {
+        items?: Array<{
+          id: string;
+          entityType: string;
+          entityId: string;
+          status: string;
+          payload: LeaveApprovalRequest['payload'];
+          actions?: LeaveApprovalRequest['actions'];
+        }>;
+      };
       if (!mounted) return;
 
+      const leaveApprovals = (approvalsPayload.items ?? [])
+        .filter((item) => item.entityType === 'leave_approval')
+        .map((item) => ({
+          id: item.id,
+          status: item.status,
+          payload: item.payload,
+          actions: item.actions ?? [],
+        }));
+
       setEmployees(companyEmployees);
+      setApprovalRequests(leaveApprovals);
       setLeaves(
         leaveRequests.map((leave) => {
           const employee = companyEmployees.find((item) => item.id === leave.employeeId);
@@ -92,6 +136,16 @@ export default function LeavesPage() {
 
   const pendingLeaves = useMemo(() => leaves.filter((leave) => leave.status === 'pending').length, [leaves]);
   const canManageLeaves = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const latestApprovalByLeave = useMemo(
+    () =>
+      approvalRequests.reduce<Record<string, LeaveApprovalRequest>>((accumulator, request) => {
+        if (!accumulator[request.payload.leaveRequestId]) {
+          accumulator[request.payload.leaveRequestId] = request;
+        }
+        return accumulator;
+      }, {}),
+    [approvalRequests]
+  );
 
   const handleSubmitLeave = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -127,38 +181,87 @@ export default function LeavesPage() {
     }
 
     const leaveRequest = payload.leaveRequest as LeaveRequest;
-    setLeaves((current) => [
-      {
-        id: leaveRequest.id,
-        employeeId: leaveRequest.employeeId,
-        employeeName: `${employee.firstName} ${employee.lastName}`,
-        leaveType: leaveRequest.leaveType,
-        startDate: leaveRequest.startDate,
-        endDate: leaveRequest.endDate,
-        days: leaveRequest.days,
-        status: leaveRequest.status,
-        reason: leaveRequest.reason,
-      },
+    setApprovalRequests((current) => [
+      ...((payload.requests ?? []) as LeaveApprovalRequest[]),
       ...current,
     ]);
+    setLeaves((current) => {
+      const next = current.filter((leave) => leave.id !== leaveRequest.id);
+      return [
+        {
+          id: leaveRequest.id,
+          employeeId: leaveRequest.employeeId,
+          employeeName: `${employee.firstName} ${employee.lastName}`,
+          leaveType: leaveRequest.leaveType,
+          startDate: leaveRequest.startDate,
+          endDate: leaveRequest.endDate,
+          days: leaveRequest.days,
+          status: leaveRequest.status,
+          reason: leaveRequest.reason,
+        },
+        ...next,
+      ];
+    });
     setFormData({ employeeId: '', leaveType: 'annual', startDate: '', endDate: '', reason: '' });
     setIsCreating(false);
     setSuccess('Leave request submitted.');
   };
 
-  const updateStatus = async (leaveId: string, status: Leave['status']) => {
-    const response = await fetch(`/api/leave-requests/${leaveId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+  const ensureApprovalRequest = async (leaveId: string) => {
+    const response = await fetch(`/api/leave-requests/${leaveId}/approvals`, {
+      method: 'POST',
     });
-    const payload = await response.json();
+    const payload = (await response.json().catch(() => ({ requests: [] }))) as {
+      error?: string;
+      requests?: LeaveApprovalRequest[];
+    };
     if (!response.ok) {
-      setError(payload.error ?? 'Failed to update leave request.');
+      throw new Error(payload.error ?? 'Failed to start leave approval workflow.');
+    }
+
+    setApprovalRequests((current) => {
+      const otherRequests = current.filter((request) => request.payload.leaveRequestId !== leaveId);
+      return [...(payload.requests ?? []), ...otherRequests];
+    });
+    return (payload.requests ?? []).find((request) => request.status === 'pending') ?? null;
+  };
+
+  const reviewLeaveRequest = async (leaveId: string, decision: 'approved' | 'rejected') => {
+    setError('');
+    setSuccess('');
+
+    let request = latestApprovalByLeave[leaveId];
+    if (!request || request.status !== 'pending') {
+      request = await ensureApprovalRequest(leaveId);
+    }
+    if (!request) {
+      setError('No pending leave approval workflow is available for this request.');
       return;
     }
 
-    setLeaves((current) => current.map((leave) => (leave.id === leaveId ? { ...leave, status } : leave)));
+    const comments = decision === 'rejected' ? window.prompt('Reason for rejection (optional)') ?? '' : '';
+    const response = await fetch(`/api/leave-requests/${leaveId}/approvals/${request.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, comments }),
+    });
+    const payload = (await response.json().catch(() => ({ requests: [] }))) as {
+      error?: string;
+      requests?: LeaveApprovalRequest[];
+    };
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to review leave request.');
+      return;
+    }
+
+    setApprovalRequests((current) => {
+      const otherRequests = current.filter((item) => item.payload.leaveRequestId !== leaveId);
+      return [...(payload.requests ?? []), ...otherRequests];
+    });
+    setLeaves((current) =>
+      current.map((leave) => (leave.id === leaveId ? { ...leave, status: decision } : leave))
+    );
+    setSuccess(decision === 'approved' ? 'Leave request approved.' : 'Leave request rejected.');
   };
 
   if (!session) {
@@ -316,7 +419,23 @@ export default function LeavesPage() {
               key: 'status',
               label: 'Status',
               sortable: true,
-              render: (value) => <StatusPill label={String(value)} tone={leaveTone(value as Leave['status'])} />,
+              render: (value, row) => {
+                const request = latestApprovalByLeave[row.id];
+                const latestAction = request?.actions.at(-1);
+                return (
+                  <div className="space-y-2">
+                    <StatusPill label={String(value)} tone={leaveTone(value as Leave['status'])} />
+                    {request ? (
+                      <p className="text-xs text-muted-foreground">
+                        Workflow {request.status}
+                        {latestAction?.comments ? ` (${latestAction.comments})` : ''}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Workflow pending initialization</p>
+                    )}
+                  </div>
+                );
+              },
             },
             {
               key: 'id',
@@ -324,10 +443,10 @@ export default function LeavesPage() {
               render: (_, row) => (
                 canManageLeaves && row.status === 'pending' ? (
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'approved')}>
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void reviewLeaveRequest(row.id, 'approved')}>
                       Approve
                     </Button>
-                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updateStatus(row.id, 'rejected')}>
+                    <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void reviewLeaveRequest(row.id, 'rejected')}>
                       Reject
                     </Button>
                   </div>
