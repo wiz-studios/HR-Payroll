@@ -3,18 +3,37 @@
 
 import { Employee, PayrollDetail } from './db-schema';
 
-// 2024 Kenya Tax Rates and Regulations
-export const KENYA_TAX_CONFIG = {
-  // Personal Relief (2024)
-  PERSONAL_RELIEF: 2400,
-  
-  // NSSF Contribution Rates (Employee contribution)
-  NSSF_RATE: 0.06, // 6% of gross salary
-  NSSF_MIN: 100,
-  NSSF_MAX: 18000, // Capped at Sh 18,000 per month
-  
-  // NHIF Contribution Rates (Employee contribution) - 2024 rates
-  NHIF_BRACKETS: [
+export interface PayrollTaxBracket {
+  min: number;
+  max: number;
+  rate: number;
+}
+
+export interface PayrollHealthBracket {
+  min: number;
+  max: number;
+  rate: number;
+  fixed: number;
+}
+
+export interface PayrollStatutoryConfig {
+  personalRelief: number;
+  nssfRate: number;
+  nssfMin: number;
+  nssfMax: number;
+  healthContributionBrackets: PayrollHealthBracket[];
+  incomeTaxBrackets: PayrollTaxBracket[];
+  insuranceReliefRate: number;
+  insuranceReliefMaxAnnual: number;
+}
+
+// Kenya baseline rates, used as default fallback until a statutory rule set overrides them.
+export const DEFAULT_KENYA_PAYROLL_CONFIG: PayrollStatutoryConfig = {
+  personalRelief: 2400,
+  nssfRate: 0.06,
+  nssfMin: 100,
+  nssfMax: 18000,
+  healthContributionBrackets: [
     { min: 0, max: 5999, rate: 0.025, fixed: 150 },
     { min: 6000, max: 9999, rate: 0.025, fixed: 300 },
     { min: 10000, max: 14999, rate: 0.025, fixed: 400 },
@@ -27,26 +46,40 @@ export const KENYA_TAX_CONFIG = {
     { min: 45000, max: 49999, rate: 0.025, fixed: 1000 },
     { min: 50000, max: 100000, rate: 0.025, fixed: 1700 },
   ],
-  
-  // Income Tax Brackets 2024 (as per KRA)
-  INCOME_TAX_BRACKETS: [
+  incomeTaxBrackets: [
     { min: 0, max: 24000, rate: 0.10 },
     { min: 24001, max: 48000, rate: 0.15 },
     { min: 48001, max: 100000, rate: 0.20 },
     { min: 100001, max: 150000, rate: 0.25 },
     { min: 150001, max: Infinity, rate: 0.30 },
   ],
-  
-  // Insurance Relief (annual, divide by 12 for monthly)
-  INSURANCE_RELIEF_RATE: 0.05, // 5% for insurance premium
-  INSURANCE_RELIEF_MAX_ANNUAL: 60000, // Annual cap
+  insuranceReliefRate: 0.05,
+  insuranceReliefMaxAnnual: 60000,
 };
+
+export function resolvePayrollStatutoryConfig(
+  overrides: Partial<PayrollStatutoryConfig> = {}
+): PayrollStatutoryConfig {
+  return {
+    personalRelief: overrides.personalRelief ?? DEFAULT_KENYA_PAYROLL_CONFIG.personalRelief,
+    nssfRate: overrides.nssfRate ?? DEFAULT_KENYA_PAYROLL_CONFIG.nssfRate,
+    nssfMin: overrides.nssfMin ?? DEFAULT_KENYA_PAYROLL_CONFIG.nssfMin,
+    nssfMax: overrides.nssfMax ?? DEFAULT_KENYA_PAYROLL_CONFIG.nssfMax,
+    healthContributionBrackets:
+      overrides.healthContributionBrackets ?? DEFAULT_KENYA_PAYROLL_CONFIG.healthContributionBrackets,
+    incomeTaxBrackets: overrides.incomeTaxBrackets ?? DEFAULT_KENYA_PAYROLL_CONFIG.incomeTaxBrackets,
+    insuranceReliefRate: overrides.insuranceReliefRate ?? DEFAULT_KENYA_PAYROLL_CONFIG.insuranceReliefRate,
+    insuranceReliefMaxAnnual:
+      overrides.insuranceReliefMaxAnnual ?? DEFAULT_KENYA_PAYROLL_CONFIG.insuranceReliefMaxAnnual,
+  };
+}
 
 export interface PayrollCalculationInput {
   employee: Employee;
   workingDays?: number; // Days worked in month, for partial salary
   allowanceOverrides?: Record<string, number>;
   deductionOverrides?: Record<string, number>;
+  statutoryConfig?: Partial<PayrollStatutoryConfig>;
 }
 
 export interface PayrollCalculationResult {
@@ -80,27 +113,28 @@ export interface PayrollCalculationResult {
  * Calculate NSSF contribution
  * Kenya Social and Economic Council (NSSF) - 6% of gross salary, capped at Sh 18,000
  */
-export function calculateNSSF(grossSalary: number): number {
+export function calculateNSSF(grossSalary: number, config: PayrollStatutoryConfig = DEFAULT_KENYA_PAYROLL_CONFIG): number {
+  if (grossSalary <= 0) return 0;
   const nssfAmount = Math.min(
-    grossSalary * KENYA_TAX_CONFIG.NSSF_RATE,
-    KENYA_TAX_CONFIG.NSSF_MAX
+    grossSalary * config.nssfRate,
+    config.nssfMax
   );
-  return Math.max(nssfAmount, KENYA_TAX_CONFIG.NSSF_MIN);
+  return Math.max(nssfAmount, config.nssfMin);
 }
 
 /**
  * Calculate NHIF contribution
  * National Hospital Insurance Fund - varies by salary bracket
  */
-export function calculateNHIF(grossSalary: number): number {
-  const bracket = KENYA_TAX_CONFIG.NHIF_BRACKETS.find(
+export function calculateNHIF(grossSalary: number, config: PayrollStatutoryConfig = DEFAULT_KENYA_PAYROLL_CONFIG): number {
+  const bracket = config.healthContributionBrackets.find(
     b => grossSalary >= b.min && grossSalary <= b.max
   );
   
   if (!bracket) {
     // Default to highest bracket if salary exceeds max
-    const maxBracket = KENYA_TAX_CONFIG.NHIF_BRACKETS[
-      KENYA_TAX_CONFIG.NHIF_BRACKETS.length - 1
+    const maxBracket = config.healthContributionBrackets[
+      config.healthContributionBrackets.length - 1
     ];
     return maxBracket.fixed;
   }
@@ -122,15 +156,19 @@ export function calculateTaxableIncome(
 /**
  * Calculate income tax using progressive tax brackets
  */
-export function calculateIncomeTax(taxableIncome: number): number {
+export function calculateIncomeTax(
+  taxableIncome: number,
+  config: PayrollStatutoryConfig = DEFAULT_KENYA_PAYROLL_CONFIG
+): number {
   let tax = 0;
   
-  for (const bracket of KENYA_TAX_CONFIG.INCOME_TAX_BRACKETS) {
+  for (const bracket of config.incomeTaxBrackets) {
     if (taxableIncome <= bracket.min) {
       break;
     }
     
-    const incomeInBracket = Math.min(taxableIncome, bracket.max) - bracket.min;
+    const bracketFloor = bracket.min === 0 ? 0 : bracket.min - 1;
+    const incomeInBracket = Math.min(taxableIncome, bracket.max) - bracketFloor;
     tax += incomeInBracket * bracket.rate;
   }
   
@@ -141,18 +179,21 @@ export function calculateIncomeTax(taxableIncome: number): number {
  * Calculate personal relief (monthly)
  * KRA provides personal relief to reduce tax burden
  */
-export function getPersonalRelief(): number {
-  return KENYA_TAX_CONFIG.PERSONAL_RELIEF;
+export function getPersonalRelief(config: PayrollStatutoryConfig = DEFAULT_KENYA_PAYROLL_CONFIG): number {
+  return config.personalRelief;
 }
 
 /**
  * Calculate insurance relief (monthly)
  * Up to 5% of gross salary, capped at Sh 5,000/month
  */
-export function calculateInsuranceRelief(grossSalary: number): number {
-  const maxMonthly = KENYA_TAX_CONFIG.INSURANCE_RELIEF_MAX_ANNUAL / 12;
+export function calculateInsuranceRelief(
+  grossSalary: number,
+  config: PayrollStatutoryConfig = DEFAULT_KENYA_PAYROLL_CONFIG
+): number {
+  const maxMonthly = config.insuranceReliefMaxAnnual / 12;
   return Math.min(
-    grossSalary * KENYA_TAX_CONFIG.INSURANCE_RELIEF_RATE,
+    grossSalary * config.insuranceReliefRate,
     maxMonthly
   );
 }
@@ -163,6 +204,7 @@ export function calculateInsuranceRelief(grossSalary: number): number {
  */
 export function calculatePayroll(input: PayrollCalculationInput): PayrollCalculationResult {
   const { employee, workingDays = 22, allowanceOverrides = {}, deductionOverrides = {} } = input;
+  const config = resolvePayrollStatutoryConfig(input.statutoryConfig);
   
   // Calculate basic salary (prorate if not full month)
   const basicSalary = employee.baseSalary * (workingDays / 22);
@@ -183,16 +225,16 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const grossSalary = basicSalary + allowanceTotal;
   
   // Calculate mandatory deductions
-  const nssfDeduction = calculateNSSF(grossSalary);
-  const nhifDeduction = calculateNHIF(grossSalary);
+  const nssfDeduction = calculateNSSF(grossSalary, config);
+  const nhifDeduction = calculateNHIF(grossSalary, config);
   
   // Calculate taxable income
   const taxableIncome = calculateTaxableIncome(grossSalary, nssfDeduction, nhifDeduction);
   
   // Calculate income tax
-  const incomeTaxBeforeRelief = calculateIncomeTax(taxableIncome);
-  const personalRelief = getPersonalRelief();
-  const insuranceRelief = calculateInsuranceRelief(grossSalary);
+  const incomeTaxBeforeRelief = calculateIncomeTax(taxableIncome, config);
+  const personalRelief = getPersonalRelief(config);
+  const insuranceRelief = calculateInsuranceRelief(grossSalary, config);
   const incomeTax = Math.max(0, incomeTaxBeforeRelief - personalRelief - insuranceRelief);
   
   // Calculate other deductions (loans, union fees, etc.)
@@ -245,7 +287,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
  */
 export function calculateBulkPayroll(
   employees: Employee[],
-  overrides?: Map<string, { allowances?: Record<string, number>; deductions?: Record<string, number> }>
+  overrides?: Map<string, { allowances?: Record<string, number>; deductions?: Record<string, number> }>,
+  statutoryConfig?: Partial<PayrollStatutoryConfig>
 ): Map<string, PayrollCalculationResult> {
   const results = new Map<string, PayrollCalculationResult>();
   
@@ -255,6 +298,7 @@ export function calculateBulkPayroll(
       employee,
       allowanceOverrides: override?.allowances,
       deductionOverrides: override?.deductions,
+      statutoryConfig,
     });
     results.set(employee.id, result);
   }

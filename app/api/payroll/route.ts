@@ -3,6 +3,7 @@ import { calculateBulkPayroll } from '@/lib/payroll-calculator';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { getEmployeesByCompany, insertAuditLog, mapPayroll, mapPayrollDetail } from '@/lib/hr/repository';
 import { syncPayrollRunToEnterprise } from '@/lib/platform/payments';
+import { loadPayrollStatutoryConfig } from '@/lib/platform/statutory';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   if (employees.length === 0) {
     return NextResponse.json({ error: 'No active employees are available for payroll.' }, { status: 400 });
   }
+  const statutoryConfig = await loadPayrollStatutoryConfig(admin, auth.session.companyId, payload.payrollMonth);
 
   const { data: existing } = await admin
     .schema('HR')
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   const now = new Date().toISOString();
-  const calculations = calculateBulkPayroll(employees);
+  const calculations = calculateBulkPayroll(employees, undefined, statutoryConfig);
 
   const { data: payroll, error: payrollError } = await admin
     .schema('HR')
@@ -102,6 +104,7 @@ export async function POST(request: Request) {
       grossPay: detailRows.reduce((sum, row) => sum + row.gross_pay, 0),
       totalDeductions: detailRows.reduce((sum, row) => sum + row.total_deductions, 0),
       netPay: detailRows.reduce((sum, row) => sum + row.net_pay, 0),
+      statutoryConfig,
     },
   });
 

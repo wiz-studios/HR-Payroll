@@ -5,13 +5,27 @@ type UntypedClient = SupabaseClient<any, any, any>;
 
 type BatchStatus = 'draft' | 'exported' | 'submitted' | 'reconciled' | 'failed';
 
-const BATCH_TRANSITIONS = {
+export const BATCH_TRANSITIONS = {
   draft: ['exported', 'failed'],
   exported: ['submitted', 'failed'],
   submitted: ['reconciled', 'failed'],
   reconciled: [],
   failed: ['draft'],
 } satisfies Record<BatchStatus, BatchStatus[]>;
+
+export function canTransitionPaymentBatchStatus(currentStatus: BatchStatus, nextStatus: BatchStatus) {
+  return BATCH_TRANSITIONS[currentStatus].includes(nextStatus);
+}
+
+export function getPaymentBatchItemStatus(nextStatus: BatchStatus) {
+  return nextStatus === 'submitted'
+    ? 'submitted'
+    : nextStatus === 'reconciled'
+      ? 'reconciled'
+      : nextStatus === 'failed'
+        ? 'failed'
+        : 'pending';
+}
 
 async function getDefaultPayrollGroupId(client: UntypedClient, companyId: string) {
   const { data: payrollGroup, error } = await client
@@ -299,7 +313,7 @@ export async function updatePaymentBatchStatus(
     .single();
 
   if (error || !batch) throw new Error(error?.message ?? 'Payment batch not found.');
-  if (!BATCH_TRANSITIONS[batch.status as BatchStatus].includes(nextStatus)) {
+  if (!canTransitionPaymentBatchStatus(batch.status as BatchStatus, nextStatus)) {
     throw new Error(`Invalid transition from ${batch.status} to ${nextStatus}.`);
   }
 
@@ -316,14 +330,7 @@ export async function updatePaymentBatchStatus(
 
   if (batchUpdateError) throw new Error(batchUpdateError.message);
 
-  const itemStatus =
-    nextStatus === 'submitted'
-      ? 'submitted'
-      : nextStatus === 'reconciled'
-        ? 'reconciled'
-        : nextStatus === 'failed'
-          ? 'failed'
-          : 'pending';
+  const itemStatus = getPaymentBatchItemStatus(nextStatus);
 
   const { error: itemUpdateError } = await client
     .schema('payroll')
