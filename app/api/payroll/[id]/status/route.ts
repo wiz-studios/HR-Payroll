@@ -43,8 +43,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     );
   }
 
-  if (nextStatus === 'approved' && auth.session.userRole !== 'admin') {
-    return NextResponse.json({ error: 'Only administrators can approve payroll.' }, { status: 403 });
+  if (nextStatus === 'pending_approval' || nextStatus === 'approved') {
+    return NextResponse.json(
+      { error: 'Payroll approval must be handled through the workflow approval route.' },
+      { status: 400 }
+    );
   }
 
   if ((nextStatus === 'processed' || nextStatus === 'paid') && auth.session.userRole !== 'admin') {

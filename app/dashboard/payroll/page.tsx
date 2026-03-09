@@ -13,6 +13,35 @@ import { PageHeader } from '@/components/app/page-header';
 import { StatusPill } from '@/components/app/status-pill';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+
+interface PayrollApprovalRequest {
+  id: string;
+  status: string;
+  payload: {
+    payrollId: string;
+    payrollMonth: string;
+    currentStatus: string;
+    reason: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  actions: Array<{
+    action: string;
+    actorUserId: string | null;
+    comments: string | null;
+    createdAt: string;
+  }>;
+}
 
 function mapStatusTone(status: Payroll['status']) {
   if (status === 'pending_approval') return 'warning' as const;
@@ -27,9 +56,12 @@ export default function PayrollPage() {
   const [payrollDetails, setPayrollDetails] = useState<PayrollDetail[]>([]);
   const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, string>>({});
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<PayrollApprovalRequest[]>([]);
   const [summary, setSummary] = useState<PayrollSummary | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isApprovalDialogOpen, setIsApprovalDialogOpen] = useState(false);
+  const [approvalReason, setApprovalReason] = useState('');
 
   const loadPayroll = async (companyId: string, month: string) => {
     const existingPayroll = (await db.getPayrollByMonth(companyId, month)) ?? null;
@@ -42,10 +74,12 @@ export default function PayrollPage() {
       return;
     }
 
-    const [details, logs] = await Promise.all([
+    const [details, logs, approvalsResponse] = await Promise.all([
       db.getPayrollDetailsByPayroll(existingPayroll.id),
       db.getAuditLogsByEntity(companyId, 'payroll_runs', existingPayroll.id),
+      fetch(`/api/payroll/${existingPayroll.id}/approvals`),
     ]);
+    const approvalsPayload = (await approvalsResponse.json().catch(() => ({ requests: [] }))) as { requests?: PayrollApprovalRequest[] };
     const calculations = new Map<string, PayrollCalculationResult>();
 
     details.forEach((detail) => {
@@ -69,6 +103,7 @@ export default function PayrollPage() {
 
     setPayrollDetails(details);
     setAuditLogs(logs);
+    setApprovalRequests(approvalsResponse.ok ? approvalsPayload.requests ?? [] : []);
     setSummary(generatePayrollSummary(calculations));
   };
 
@@ -136,26 +171,88 @@ export default function PayrollPage() {
     setSuccess(successMessage);
   };
 
+  const submitPayrollApproval = async () => {
+    if (!payroll) return;
+    clearMessages();
+    const response = await fetch(`/api/payroll/${payroll.id}/approvals`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: approvalReason || 'Submitted for approval' }),
+    });
+    const payload = (await response.json().catch(() => ({ requests: [] }))) as { error?: string; requests?: PayrollApprovalRequest[] };
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to submit payroll approval.');
+      return;
+    }
+    setApprovalRequests(payload.requests ?? []);
+    setIsApprovalDialogOpen(false);
+    setApprovalReason('');
+    await loadPayroll(session!.companyId, selectedMonth);
+    setSuccess('Payroll submitted for approval.');
+  };
+
+  const reviewPayrollApproval = async (requestId: string, decision: 'approved' | 'rejected') => {
+    if (!payroll) return;
+    clearMessages();
+    const comments = decision === 'rejected' ? window.prompt('Reason for rejection (optional)') ?? '' : '';
+    const response = await fetch(`/api/payroll/${payroll.id}/approvals/${requestId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, comments }),
+    });
+    const payload = (await response.json().catch(() => ({ requests: [] }))) as { error?: string; requests?: PayrollApprovalRequest[] };
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to review payroll approval.');
+      return;
+    }
+    setApprovalRequests(payload.requests ?? []);
+    await loadPayroll(session!.companyId, selectedMonth);
+    setSuccess(decision === 'approved' ? 'Payroll approved.' : 'Payroll sent back to draft.');
+  };
+
   const payrollStatusAction = (() => {
     if (!payroll) return null;
     if (payroll.status === 'draft') {
       return (
-        <Button className="rounded-2xl" onClick={() => void updatePayrollStatus('pending_approval', 'Payroll submitted for approval.')}>
-          <Send className="mr-2 h-4 w-4" />
-          Submit for approval
-        </Button>
+        <Dialog open={isApprovalDialogOpen} onOpenChange={setIsApprovalDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="rounded-2xl">
+              <Send className="mr-2 h-4 w-4" />
+              Submit for approval
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Submit payroll for approval</DialogTitle>
+              <DialogDescription>This creates a workflow approval request and moves the run into pending approval.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="approvalReason">Reason</Label>
+                <Input id="approvalReason" value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} />
+              </div>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setIsApprovalDialogOpen(false)}>Cancel</Button>
+                <Button onClick={() => void submitPayrollApproval()}>Submit</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       );
     }
     if (payroll.status === 'pending_approval' && session?.userRole === 'admin') {
-      return (
-        <Button
-          className="rounded-2xl"
-          onClick={() => void updatePayrollStatus('approved', 'Payroll approved.')}
-        >
-          <CheckCheck className="mr-2 h-4 w-4" />
-          Approve payroll
-        </Button>
-      );
+      const pendingRequest = approvalRequests.find((request) => request.status === 'pending');
+      return pendingRequest ? (
+        <div className="flex gap-3">
+          <Button className="rounded-2xl" onClick={() => void reviewPayrollApproval(pendingRequest.id, 'approved')}>
+            <CheckCheck className="mr-2 h-4 w-4" />
+            Approve payroll
+          </Button>
+          <Button variant="outline" className="rounded-2xl" onClick={() => void reviewPayrollApproval(pendingRequest.id, 'rejected')}>
+            Return to draft
+          </Button>
+        </div>
+      ) : null;
     }
     if (payroll.status === 'approved' && session?.userRole === 'admin') {
       return (
@@ -389,6 +486,34 @@ export default function PayrollPage() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">No payroll events recorded yet for this cycle.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-border/70 bg-card/70 p-5">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Approval Workflow</p>
+            <div className="mt-4 space-y-3">
+              {approvalRequests.length > 0 ? (
+                approvalRequests.map((request) => (
+                  <div key={request.id} className="rounded-[20px] border border-border/60 px-4 py-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{request.payload.reason || 'Payroll approval request'}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {request.payload.payrollMonth} · {new Date(request.createdAt).toLocaleString('en-KE')}
+                        </p>
+                      </div>
+                      <StatusPill label={request.status} tone={request.status === 'approved' ? 'success' : request.status === 'rejected' ? 'danger' : 'warning'} />
+                    </div>
+                    {request.actions.length > 0 ? (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        {request.actions.map((action) => `${action.action}${action.comments ? ` (${action.comments})` : ''}`).join(' → ')}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No workflow approvals recorded for this payroll run yet.</p>
               )}
             </div>
           </div>
