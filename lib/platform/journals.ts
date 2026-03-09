@@ -40,6 +40,80 @@ export const DEFAULT_JOURNAL_ACCOUNTS: JournalAccountConfig = {
   netPayable: { code: '2140', name: 'Net Salaries Payable' },
 };
 
+function normalizeJournalAccounts(config: Record<string, unknown> | null | undefined): JournalAccountConfig {
+  const source = config ?? {};
+
+  const pickAccount = (
+    key: keyof JournalAccountConfig,
+    fallback: { code: string; name: string }
+  ) => {
+    const candidate = source[key] as Record<string, unknown> | undefined;
+    return {
+      code:
+        typeof candidate?.code === 'string' && candidate.code.trim().length > 0
+          ? candidate.code.trim()
+          : fallback.code,
+      name:
+        typeof candidate?.name === 'string' && candidate.name.trim().length > 0
+          ? candidate.name.trim()
+          : fallback.name,
+    };
+  };
+
+  return {
+    salaryExpense: pickAccount('salaryExpense', DEFAULT_JOURNAL_ACCOUNTS.salaryExpense),
+    payeLiability: pickAccount('payeLiability', DEFAULT_JOURNAL_ACCOUNTS.payeLiability),
+    nssfLiability: pickAccount('nssfLiability', DEFAULT_JOURNAL_ACCOUNTS.nssfLiability),
+    nhifLiability: pickAccount('nhifLiability', DEFAULT_JOURNAL_ACCOUNTS.nhifLiability),
+    otherDeductionsLiability: pickAccount('otherDeductionsLiability', DEFAULT_JOURNAL_ACCOUNTS.otherDeductionsLiability),
+    netPayable: pickAccount('netPayable', DEFAULT_JOURNAL_ACCOUNTS.netPayable),
+  };
+}
+
+export async function getJournalAccountConfig(client: UntypedClient, companyId: string) {
+  const { data, error } = await client
+    .schema('payroll')
+    .from('journal_account_configs')
+    .select('config')
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return normalizeJournalAccounts((data?.config as Record<string, unknown> | null | undefined) ?? null);
+}
+
+export async function saveJournalAccountConfig(
+  client: UntypedClient,
+  companyId: string,
+  actorUserId: string,
+  config: Record<string, unknown>
+) {
+  const normalized = normalizeJournalAccounts(config);
+  const now = new Date().toISOString();
+
+  const { error } = await client
+    .schema('payroll')
+    .from('journal_account_configs')
+    .upsert(
+      {
+        company_id: companyId,
+        config: normalized,
+        updated_by: actorUserId,
+        updated_at: now,
+      },
+      { onConflict: 'company_id' }
+    );
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return normalized;
+}
+
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
 }
@@ -221,10 +295,13 @@ export async function getPayrollJournal(client: UntypedClient, companyId: string
     }
   );
 
+  const accounts = await getJournalAccountConfig(client, companyId);
+
   const entries = buildPayrollJournalEntries(
     payrollRun.id as string,
     payrollRun.pay_period_label as string,
-    totals
+    totals,
+    accounts
   );
   const summary = summarizePayrollJournal(
     payrollRun.id as string,

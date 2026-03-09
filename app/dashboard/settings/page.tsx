@@ -59,6 +59,15 @@ interface PayrollGroupItem {
   department_id: string | null;
 }
 
+interface JournalAccountConfig {
+  salaryExpense: { code: string; name: string };
+  payeLiability: { code: string; name: string };
+  nssfLiability: { code: string; name: string };
+  nhifLiability: { code: string; name: string };
+  otherDeductionsLiability: { code: string; name: string };
+  netPayable: { code: string; name: string };
+}
+
 interface CompanyStructure {
   branches: BranchItem[];
   departments: DepartmentItem[];
@@ -87,6 +96,15 @@ const emptyStructure: CompanyStructure = {
   departments: [],
   costCenters: [],
   payrollGroups: [],
+};
+
+const defaultJournalAccounts: JournalAccountConfig = {
+  salaryExpense: { code: '5000', name: 'Payroll Salary Expense' },
+  payeLiability: { code: '2100', name: 'PAYE Liability' },
+  nssfLiability: { code: '2110', name: 'NSSF Liability' },
+  nhifLiability: { code: '2120', name: 'NHIF/SHIF Liability' },
+  otherDeductionsLiability: { code: '2130', name: 'Other Payroll Deductions' },
+  netPayable: { code: '2140', name: 'Net Salaries Payable' },
 };
 
 const defaultEditor = (entityType: StructureEntityType): StructureEditorState => ({
@@ -121,6 +139,8 @@ export default function SettingsPage() {
     lastName: '',
     role: 'manager' as const,
   });
+  const [journalAccounts, setJournalAccounts] = useState<JournalAccountConfig>(defaultJournalAccounts);
+  const [isEditingJournalAccounts, setIsEditingJournalAccounts] = useState(false);
   const [structureEditor, setStructureEditor] = useState<StructureEditorState>(defaultEditor('branch'));
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [isAddingUser, setIsAddingUser] = useState(false);
@@ -143,8 +163,14 @@ export default function SettingsPage() {
         db.getUsersByCompany(currentSession.companyId),
       ]);
 
-      const structureResponse = await fetch('/api/company-structure');
+      const [structureResponse, journalAccountsResponse] = await Promise.all([
+        fetch('/api/company-structure'),
+        fetch('/api/company/journal-accounts'),
+      ]);
       const structurePayload = (await structureResponse.json().catch(() => emptyStructure)) as CompanyStructure & { error?: string };
+      const journalAccountsPayload = (await journalAccountsResponse.json().catch(() => ({ config: defaultJournalAccounts }))) as {
+        config?: JournalAccountConfig;
+      };
 
       if (!mounted) return;
       setCompany(currentCompany);
@@ -157,6 +183,9 @@ export default function SettingsPage() {
           costCenters: structurePayload.costCenters ?? [],
           payrollGroups: structurePayload.payrollGroups ?? [],
         });
+      }
+      if (journalAccountsResponse.ok) {
+        setJournalAccounts(journalAccountsPayload.config ?? defaultJournalAccounts);
       }
     };
 
@@ -214,6 +243,30 @@ export default function SettingsPage() {
   const handleResetPassword = async (userId: string) => {
     const tempPassword = await authService.resetUserPassword(userId);
     setMessage(`Temporary password: ${tempPassword}`);
+  };
+
+  const handleSaveJournalAccounts = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+
+    const response = await fetch('/api/company/journal-accounts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(journalAccounts),
+    });
+    const payload = (await response.json().catch(() => ({ config: defaultJournalAccounts }))) as {
+      error?: string;
+      config?: JournalAccountConfig;
+    };
+
+    if (!response.ok) {
+      setError(payload.error ?? 'Failed to update journal accounts.');
+      return;
+    }
+
+    setJournalAccounts(payload.config ?? defaultJournalAccounts);
+    setIsEditingJournalAccounts(false);
+    setMessage('Journal account mappings updated.');
   };
 
   const openCreateDialog = (entityType: StructureEntityType) => {
@@ -665,6 +718,95 @@ export default function SettingsPage() {
             ]}
           />
         </div>
+      </section>
+
+      <section className="soft-panel p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Finance Integration</p>
+            <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-foreground">Journal account mappings</h2>
+          </div>
+          {isAdmin && !isEditingJournalAccounts ? (
+            <Button variant="outline" className="rounded-2xl" onClick={() => setIsEditingJournalAccounts(true)}>
+              Edit mappings
+            </Button>
+          ) : null}
+        </div>
+
+        <form onSubmit={handleSaveJournalAccounts} className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {([
+            ['salaryExpense', 'Salary expense'],
+            ['payeLiability', 'PAYE liability'],
+            ['nssfLiability', 'NSSF liability'],
+            ['nhifLiability', 'NHIF/SHIF liability'],
+            ['otherDeductionsLiability', 'Other deductions liability'],
+            ['netPayable', 'Net salaries payable'],
+          ] as const).map(([key, label]) => (
+            <div key={key} className="rounded-[24px] border border-border/70 bg-card/70 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+              <div className="mt-4 grid gap-3">
+                <div>
+                  <Label htmlFor={`${key}-code`}>Account code</Label>
+                  {isAdmin && isEditingJournalAccounts ? (
+                    <Input
+                      id={`${key}-code`}
+                      value={journalAccounts[key].code}
+                      onChange={(event) =>
+                        setJournalAccounts((current) => ({
+                          ...current,
+                          [key]: { ...current[key], code: event.target.value },
+                        }))
+                      }
+                      className="mt-2 h-12 rounded-2xl border-border/70 bg-card"
+                    />
+                  ) : (
+                    <div className="mt-2 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-foreground">
+                      {journalAccounts[key].code}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <Label htmlFor={`${key}-name`}>Account name</Label>
+                  {isAdmin && isEditingJournalAccounts ? (
+                    <Input
+                      id={`${key}-name`}
+                      value={journalAccounts[key].name}
+                      onChange={(event) =>
+                        setJournalAccounts((current) => ({
+                          ...current,
+                          [key]: { ...current[key], name: event.target.value },
+                        }))
+                      }
+                      className="mt-2 h-12 rounded-2xl border-border/70 bg-card"
+                    />
+                  ) : (
+                    <div className="mt-2 rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-foreground">
+                      {journalAccounts[key].name}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {isAdmin && isEditingJournalAccounts ? (
+            <div className="md:col-span-2 xl:col-span-3 flex justify-end gap-3 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                onClick={() => {
+                  setIsEditingJournalAccounts(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="rounded-2xl">
+                Save mappings
+              </Button>
+            </div>
+          ) : null}
+        </form>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-2">
