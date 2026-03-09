@@ -43,6 +43,24 @@ interface PayrollApprovalRequest {
   }>;
 }
 
+interface PaymentBatch {
+  id: string;
+  batchType: string;
+  status: 'draft' | 'exported' | 'submitted' | 'reconciled' | 'failed';
+  reference: string | null;
+  totalAmount: number;
+  totalEmployees: number;
+  createdAt: string;
+  updatedAt: string;
+  itemBreakdown: {
+    pending: number;
+    submitted: number;
+    paid: number;
+    failed: number;
+    reconciled: number;
+  };
+}
+
 function mapStatusTone(status: Payroll['status']) {
   if (status === 'pending_approval') return 'warning' as const;
   if (status === 'approved' || status === 'processed' || status === 'paid') return 'success' as const;
@@ -57,6 +75,7 @@ export default function PayrollPage() {
   const [employeeDirectory, setEmployeeDirectory] = useState<Record<string, string>>({});
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [approvalRequests, setApprovalRequests] = useState<PayrollApprovalRequest[]>([]);
+  const [paymentBatches, setPaymentBatches] = useState<PaymentBatch[]>([]);
   const [summary, setSummary] = useState<PayrollSummary | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -74,12 +93,14 @@ export default function PayrollPage() {
       return;
     }
 
-    const [details, logs, approvalsResponse] = await Promise.all([
+    const [details, logs, approvalsResponse, paymentsResponse] = await Promise.all([
       db.getPayrollDetailsByPayroll(existingPayroll.id),
       db.getAuditLogsByEntity(companyId, 'payroll_runs', existingPayroll.id),
       fetch(`/api/payroll/${existingPayroll.id}/approvals`),
+      fetch(`/api/payroll/${existingPayroll.id}/payments`),
     ]);
     const approvalsPayload = (await approvalsResponse.json().catch(() => ({ requests: [] }))) as { requests?: PayrollApprovalRequest[] };
+    const paymentsPayload = (await paymentsResponse.json().catch(() => ({ batches: [] }))) as { batches?: PaymentBatch[] };
     const calculations = new Map<string, PayrollCalculationResult>();
 
     details.forEach((detail) => {
@@ -104,6 +125,7 @@ export default function PayrollPage() {
     setPayrollDetails(details);
     setAuditLogs(logs);
     setApprovalRequests(approvalsResponse.ok ? approvalsPayload.requests ?? [] : []);
+    setPaymentBatches(paymentsResponse.ok ? paymentsPayload.batches ?? [] : []);
     setSummary(generatePayrollSummary(calculations));
   };
 
@@ -210,6 +232,73 @@ export default function PayrollPage() {
     setSuccess(decision === 'approved' ? 'Payroll approved.' : 'Payroll sent back to draft.');
   };
 
+  const createPaymentBatch = async () => {
+    if (!payroll) return;
+    clearMessages();
+    const response = await fetch(`/api/payroll/${payroll.id}/payments`, {
+      method: 'POST',
+    });
+    const payload = (await response.json().catch(() => ({ batches: [] }))) as {
+      error?: string;
+      batches?: PaymentBatch[];
+    };
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to create payment batch.');
+      return;
+    }
+    setPaymentBatches(payload.batches ?? []);
+    setSuccess('Payment batch created.');
+  };
+
+  const updatePaymentBatch = async (batchId: string, status: PaymentBatch['status'], reference?: string) => {
+    if (!payroll) return;
+    clearMessages();
+    const response = await fetch(`/api/payroll/${payroll.id}/payments/${batchId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status, reference }),
+    });
+    const payload = (await response.json().catch(() => ({ batches: [] }))) as {
+      error?: string;
+      batches?: PaymentBatch[];
+    };
+    if (!response.ok) {
+      setError(payload.error ?? 'Unable to update payment batch.');
+      return;
+    }
+    setPaymentBatches(payload.batches ?? []);
+    setSuccess(`Payment batch moved to ${status.replace('_', ' ')}.`);
+  };
+
+  const exportPaymentBatch = async (batchId: string) => {
+    if (!payroll) return;
+    clearMessages();
+    const response = await fetch(`/api/payroll/${payroll.id}/payments/${batchId}/export`);
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({ error: 'Unable to export payment batch.' }))) as {
+        error?: string;
+      };
+      setError(payload.error ?? 'Unable to export payment batch.');
+      return;
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const filenameMatch = disposition.match(/filename=\"?([^"]+)\"?/i);
+    anchor.href = downloadUrl;
+    anchor.download = filenameMatch?.[1] ?? `${payroll.id}-payment-batch.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+    await loadPayroll(session!.companyId, selectedMonth);
+    setSuccess('Payment batch CSV exported.');
+  };
+
+  const hasReconciledBatch = paymentBatches.some((batch) => batch.status === 'reconciled');
+
   const payrollStatusAction = (() => {
     if (!payroll) return null;
     if (payroll.status === 'draft') {
@@ -269,6 +358,7 @@ export default function PayrollPage() {
       return (
         <Button
           className="rounded-2xl"
+          disabled={!hasReconciledBatch}
           onClick={() => void updatePayrollStatus('paid', 'Payroll marked as paid.')}
         >
           <LockKeyhole className="mr-2 h-4 w-4" />
@@ -284,9 +374,13 @@ export default function PayrollPage() {
     if (payroll.status === 'draft') return 'Draft cycles are editable and can be submitted for review.';
     if (payroll.status === 'pending_approval') return 'This cycle is awaiting administrator approval or can be sent back to draft.';
     if (payroll.status === 'approved') return 'Approved cycles can now be processed and locked for execution.';
-    if (payroll.status === 'processed') return 'This cycle is locked against operational changes and is ready to be marked as paid.';
+    if (payroll.status === 'processed') {
+      return hasReconciledBatch
+        ? 'This cycle has a reconciled payment batch and can now be marked as paid.'
+        : 'Create, export, submit, and reconcile a payment batch before marking this cycle as paid.';
+    }
     return 'This cycle is finalized and should be treated as immutable payroll history.';
-  }, [payroll]);
+  }, [hasReconciledBatch, payroll]);
 
   if (!session) {
     return null;
@@ -514,6 +608,79 @@ export default function PayrollPage() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">No workflow approvals recorded for this payroll run yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-[24px] border border-border/70 bg-card/70 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Payment Operations</p>
+                <p className="mt-2 text-sm font-medium text-foreground">Disbursement and reconciliation</p>
+              </div>
+              {payroll?.status === 'processed' && session.userRole === 'admin' ? (
+                <Button className="rounded-2xl" onClick={() => void createPaymentBatch()}>
+                  Create batch
+                </Button>
+              ) : null}
+            </div>
+            <div className="mt-4 space-y-3">
+              {paymentBatches.length > 0 ? (
+                paymentBatches.map((batch) => (
+                  <div key={batch.id} className="rounded-[20px] border border-border/60 px-4 py-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {batch.batchType.replaceAll('_', ' ')} batch · {formatCurrency(batch.totalAmount)}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {batch.totalEmployees} employees · {new Date(batch.createdAt).toLocaleString('en-KE')}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Pending {batch.itemBreakdown.pending} · Submitted {batch.itemBreakdown.submitted} · Reconciled {batch.itemBreakdown.reconciled}
+                        </p>
+                      </div>
+                      <StatusPill
+                        label={batch.status}
+                        tone={batch.status === 'reconciled' ? 'success' : batch.status === 'failed' ? 'danger' : 'warning'}
+                      />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {batch.status === 'draft' || batch.status === 'exported' ? (
+                        <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void exportPaymentBatch(batch.id)}>
+                          Export CSV
+                        </Button>
+                      ) : null}
+                      {batch.status === 'exported' ? (
+                        <Button size="sm" className="rounded-2xl" onClick={() => void updatePaymentBatch(batch.id, 'submitted', window.prompt('Batch reference (optional)') ?? '')}>
+                          Mark submitted
+                        </Button>
+                      ) : null}
+                      {batch.status === 'submitted' ? (
+                        <>
+                          <Button size="sm" className="rounded-2xl" onClick={() => void updatePaymentBatch(batch.id, 'reconciled', window.prompt('Reconciliation reference (optional)') ?? '')}>
+                            Reconcile
+                          </Button>
+                          <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updatePaymentBatch(batch.id, 'failed', window.prompt('Failure note') ?? 'Batch failed')}>
+                            Mark failed
+                          </Button>
+                        </>
+                      ) : null}
+                      {batch.status === 'failed' ? (
+                        <Button size="sm" variant="outline" className="rounded-2xl" onClick={() => void updatePaymentBatch(batch.id, 'draft')}>
+                          Reopen draft
+                        </Button>
+                      ) : null}
+                    </div>
+                    {batch.reference ? (
+                      <p className="mt-3 text-xs text-muted-foreground">Reference: {batch.reference}</p>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No payment batches exist for this cycle yet. Process the payroll first, then create a batch for export and reconciliation.
+                </p>
               )}
             </div>
           </div>

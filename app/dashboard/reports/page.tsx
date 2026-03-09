@@ -20,9 +20,21 @@ interface ReportRow {
   totalNetPay: number;
 }
 
+interface PaymentReportRow {
+  id: string;
+  month: string;
+  payrollStatus: string;
+  batchType: string;
+  status: string;
+  reference: string | null;
+  totalAmount: number;
+  totalEmployees: number;
+}
+
 export default function ReportsPage() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [rows, setRows] = useState<ReportRow[]>([]);
+  const [paymentRows, setPaymentRows] = useState<PaymentReportRow[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -32,6 +44,10 @@ export default function ReportsPage() {
       setSession(currentSession);
 
       const payrolls = await db.getPayrollsByCompany(currentSession.companyId);
+      const paymentReportResponse = await fetch('/api/reports/payments');
+      const paymentReportPayload = (await paymentReportResponse.json().catch(() => ({ items: [] }))) as {
+        items?: PaymentReportRow[];
+      };
       const reportRows = await Promise.all(payrolls
       .map((payroll) => {
         return db.getPayrollDetailsByPayroll(payroll.id).then((details) => ({
@@ -47,6 +63,7 @@ export default function ReportsPage() {
       }));
       if (!mounted) return;
       setRows(reportRows.sort((a, b) => b.month.localeCompare(a.month)));
+      setPaymentRows((paymentReportPayload.items ?? []).sort((a, b) => b.month.localeCompare(a.month)));
     };
     void load();
     return () => {
@@ -150,6 +167,35 @@ export default function ReportsPage() {
                   Net pay totals help finance validate salary funding requirements ahead of bank processing.
                 </p>
               </div>
+            </div>
+          </div>
+
+          <div className="soft-panel p-6">
+            <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Payment batches</p>
+            <div className="mt-5 space-y-3">
+              {paymentRows.length > 0 ? (
+                paymentRows.slice(0, 5).map((row) => (
+                  <div key={row.id} className="rounded-[24px] border border-border/70 bg-card/70 p-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{getMonthName(row.month)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {row.batchType.replaceAll('_', ' ')} · {row.payrollStatus.replaceAll('_', ' ')}
+                        </p>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">{formatCurrency(row.totalAmount)}</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                      {row.totalEmployees} employees · {row.status.replaceAll('_', ' ')}
+                      {row.reference ? ` · ${row.reference}` : ''}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No payment batches have been created yet. Process and export a payroll cycle to start reconciliation reporting.
+                </p>
+              )}
             </div>
           </div>
         </div>

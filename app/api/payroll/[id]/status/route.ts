@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapPayroll } from '@/lib/hr/repository';
+import { hasReconciledPaymentBatch, syncPayrollRunToEnterprise } from '@/lib/platform/payments';
 
 const TRANSITIONS = {
   draft: ['pending_approval'],
@@ -52,6 +53,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   if ((nextStatus === 'processed' || nextStatus === 'paid') && auth.session.userRole !== 'admin') {
     return NextResponse.json({ error: 'Only administrators can process payroll.' }, { status: 403 });
+  }
+
+  if (nextStatus === 'paid') {
+    const hasReconciledBatch = await hasReconciledPaymentBatch(admin, auth.session.companyId, id);
+    if (!hasReconciledBatch) {
+      return NextResponse.json(
+        { error: 'Payroll can only be marked as paid after at least one payment batch has been reconciled.' },
+        { status: 400 }
+      );
+    }
   }
 
   if (existing.locked_at && existing.status !== 'processed') {
@@ -136,6 +147,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       paymentStatus: nextStatus === 'paid' ? 'paid' : nextStatus === 'processed' ? 'processed' : 'pending',
     },
   });
+
+  await syncPayrollRunToEnterprise(admin, auth.session.companyId, id);
 
   return NextResponse.json({ payroll: mapPayroll(data) });
 }

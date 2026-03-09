@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { calculateBulkPayroll } from '@/lib/payroll-calculator';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { getEmployeesByCompany, insertAuditLog, mapPayroll, mapPayrollDetail } from '@/lib/hr/repository';
+import { syncPayrollRunToEnterprise } from '@/lib/platform/payments';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
@@ -103,6 +104,8 @@ export async function POST(request: Request) {
       netPay: detailRows.reduce((sum, row) => sum + row.net_pay, 0),
     },
   });
+
+  await syncPayrollRunToEnterprise(admin, auth.session.companyId, payroll.id);
 
   return NextResponse.json({
     payroll: mapPayroll(payroll),
