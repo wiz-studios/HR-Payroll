@@ -28,6 +28,38 @@ interface EmployeeOrganization {
   workLocation: string | null;
 }
 
+interface EmployeeHistory {
+  employmentHistory: Array<{
+    id: string;
+    branchName: string | null;
+    departmentName: string | null;
+    costCenterName: string | null;
+    payrollGroupName: string | null;
+    jobTitle: string;
+    jobGrade: string | null;
+    workLocation: string | null;
+    employmentType: string;
+    joinDate: string;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+    isCurrent: boolean;
+    createdAt: string;
+  }>;
+  compensationHistory: Array<{
+    id: string;
+    currency: string;
+    salaryFrequency: string;
+    paymentMethod: string;
+    baseSalary: number;
+    allowances: Record<string, number>;
+    recurringDeductions: Record<string, number>;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+    isCurrent: boolean;
+    createdAt: string;
+  }>;
+}
+
 type EmployeeEditor = Partial<Employee> & {
   branchId?: string;
   departmentId?: string;
@@ -35,6 +67,7 @@ type EmployeeEditor = Partial<Employee> & {
   payrollGroupId?: string;
   jobGrade?: string;
   workLocation?: string;
+  effectiveFrom?: string;
 };
 
 export default function EmployeeDetailPage() {
@@ -46,6 +79,7 @@ export default function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [structure, setStructure] = useState<CompanyStructure>({ branches: [], departments: [], costCenters: [], payrollGroups: [] });
   const [organization, setOrganization] = useState<EmployeeOrganization | null>(null);
+  const [history, setHistory] = useState<EmployeeHistory>({ employmentHistory: [], compensationHistory: [] });
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -65,10 +99,11 @@ export default function EmployeeDetailPage() {
         return;
       }
 
-      const [emp, structureResponse, organizationResponse] = await Promise.all([
+      const [emp, structureResponse, organizationResponse, historyResponse] = await Promise.all([
         db.getEmployee(employeeId),
         fetch('/api/company-structure'),
         fetch(`/api/employees/${employeeId}/organization`),
+        fetch(`/api/employees/${employeeId}/history`),
       ]);
       const structurePayload = (await structureResponse.json().catch(() => ({
         branches: [],
@@ -84,6 +119,10 @@ export default function EmployeeDetailPage() {
         jobGrade: null,
         workLocation: null,
       }))) as EmployeeOrganization;
+      const historyPayload = (await historyResponse.json().catch(() => ({
+        employmentHistory: [],
+        compensationHistory: [],
+      }))) as EmployeeHistory;
       if (emp && emp.companyId === sess.companyId) {
         setEmployee(emp);
         setFormData({
@@ -94,6 +133,7 @@ export default function EmployeeDetailPage() {
           payrollGroupId: organizationPayload.payrollGroupId ?? '',
           jobGrade: organizationPayload.jobGrade ?? '',
           workLocation: organizationPayload.workLocation ?? '',
+          effectiveFrom: new Date().toISOString().slice(0, 10),
         });
         setOrganization(organizationPayload);
         if (structureResponse.ok) {
@@ -102,6 +142,12 @@ export default function EmployeeDetailPage() {
             departments: structurePayload.departments ?? [],
             costCenters: structurePayload.costCenters ?? [],
             payrollGroups: structurePayload.payrollGroups ?? [],
+          });
+        }
+        if (historyResponse.ok) {
+          setHistory({
+            employmentHistory: historyPayload.employmentHistory ?? [],
+            compensationHistory: historyPayload.compensationHistory ?? [],
           });
         }
       } else {
@@ -177,6 +223,17 @@ export default function EmployeeDetailPage() {
           jobGrade: formData.jobGrade ?? null,
           workLocation: formData.workLocation ?? null,
         });
+        const historyResponse = await fetch(`/api/employees/${employeeId}/history`);
+        const historyPayload = (await historyResponse.json().catch(() => ({
+          employmentHistory: [],
+          compensationHistory: [],
+        }))) as EmployeeHistory;
+        if (historyResponse.ok) {
+          setHistory({
+            employmentHistory: historyPayload.employmentHistory ?? [],
+            compensationHistory: historyPayload.compensationHistory ?? [],
+          });
+        }
         setIsEditing(false);
         setSuccess('Employee information updated successfully');
         setTimeout(() => setSuccess(''), 3000);
@@ -254,6 +311,7 @@ export default function EmployeeDetailPage() {
           <TabsTrigger value="general">General Info</TabsTrigger>
           <TabsTrigger value="compensation">Compensation</TabsTrigger>
           <TabsTrigger value="banking">Banking</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
         {/* General Information */}
@@ -269,6 +327,21 @@ export default function EmployeeDetailPage() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSave} className="space-y-6">
+                {isEditing ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="effectiveFrom">Change effective from</Label>
+                      <Input
+                        id="effectiveFrom"
+                        name="effectiveFrom"
+                        type="date"
+                        value={formData.effectiveFrom || ''}
+                        onChange={handleInputChange}
+                      />
+                      <p className="text-xs text-gray-500">Use today or a backdated effective date. Future-dated changes are not enabled yet.</p>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
@@ -682,6 +755,80 @@ export default function EmployeeDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="history">
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Employment history</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {history.employmentHistory.length > 0 ? (
+                  history.employmentHistory.map((record) => (
+                    <div key={record.id} className="rounded-xl border border-gray-200 px-4 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-medium text-gray-900">{record.jobTitle}</p>
+                          <p className="text-sm text-gray-600">
+                            {record.departmentName ?? 'No department'} · {record.employmentType}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${record.isCurrent ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`}>
+                          {record.isCurrent ? 'Current' : 'Closed'}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-sm text-gray-600">
+                        <p>Effective: {record.effectiveFrom} {record.effectiveTo ? `to ${record.effectiveTo}` : 'onward'}</p>
+                        <p>Branch: {record.branchName ?? 'Not assigned'}</p>
+                        <p>Cost center: {record.costCenterName ?? 'Not assigned'}</p>
+                        <p>Payroll group: {record.payrollGroupName ?? 'Default monthly group'}</p>
+                        <p>Grade / location: {record.jobGrade ?? 'N/A'} / {record.workLocation ?? 'N/A'}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-600">No employment history found yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Compensation history</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {history.compensationHistory.length > 0 ? (
+                  history.compensationHistory.map((record) => (
+                    <div key={record.id} className="rounded-xl border border-gray-200 px-4 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <p className="font-medium text-gray-900">{formatCurrency(record.baseSalary)}</p>
+                          <p className="text-sm text-gray-600">
+                            {record.salaryFrequency} · {record.paymentMethod}
+                          </p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${record.isCurrent ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`}>
+                          {record.isCurrent ? 'Current' : 'Closed'}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 text-sm text-gray-600">
+                        <p>Effective: {record.effectiveFrom} {record.effectiveTo ? `to ${record.effectiveTo}` : 'onward'}</p>
+                        <p>
+                          Allowances: {Object.entries(record.allowances).length > 0 ? Object.entries(record.allowances).map(([key, value]) => `${key} ${formatCurrency(Number(value))}`).join(', ') : 'None'}
+                        </p>
+                        <p>
+                          Deductions: {Object.entries(record.recurringDeductions).length > 0 ? Object.entries(record.recurringDeductions).map(([key, value]) => `${key} ${formatCurrency(Number(value))}`).join(', ') : 'None'}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-600">No compensation history found yet.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

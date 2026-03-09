@@ -10,6 +10,7 @@ interface EmployeeEnterpriseOverrides {
   payrollGroupId?: string | null;
   jobGrade?: string | null;
   workLocation?: string | null;
+  effectiveFrom?: string | null;
 }
 
 interface CompanyStructureMutation {
@@ -44,6 +45,27 @@ function normalizeOptionalValue(value?: string | null) {
 
 function createStructureCode(prefix: string, count: number) {
   return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+}
+
+function normalizeEffectiveDate(value?: string | null) {
+  return normalizeOptionalValue(value) ?? new Date().toISOString().slice(0, 10);
+}
+
+function dayBefore(date: string) {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  parsed.setUTCDate(parsed.getUTCDate() - 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function stableJson(value: Record<string, number>) {
+  return JSON.stringify(
+    Object.keys(value)
+      .sort()
+      .reduce<Record<string, number>>((accumulator, key) => {
+        accumulator[key] = Number(value[key] ?? 0);
+        return accumulator;
+      }, {})
+  );
 }
 
 export async function syncCompanyToEnterprise(
@@ -252,6 +274,7 @@ export async function syncEmployeeToEnterprise(
   const costCenterId = normalizeOptionalValue(overrides.costCenterId);
   const jobGrade = normalizeOptionalValue(overrides.jobGrade);
   const workLocation = normalizeOptionalValue(overrides.workLocation);
+  const effectiveFrom = normalizeEffectiveDate(overrides.effectiveFrom ?? employee.joining_date);
 
   const { error: profileError } = await client
     .schema('hr')
@@ -286,7 +309,7 @@ export async function syncEmployeeToEnterprise(
   const { data: employmentExisting, error: employmentFindError } = await client
     .schema('hr')
     .from('employment_records')
-    .select('id')
+    .select('id,branch_id,department_id,cost_center_id,payroll_group_id,job_title,job_grade,work_location,employment_type,join_date,effective_from')
     .eq('employee_id', employee.id)
     .eq('is_current', true)
     .maybeSingle();
@@ -295,49 +318,83 @@ export async function syncEmployeeToEnterprise(
     throw new Error(employmentFindError.message);
   }
 
-  if (employmentExisting?.id) {
-    const { error } = await client
-      .schema('hr')
-      .from('employment_records')
-      .update({
-        branch_id: branchId,
-        department_id: departmentId,
-        cost_center_id: costCenterId,
-        payroll_group_id: payrollGroupId,
-        job_title: employee.position,
-        job_grade: jobGrade,
-        work_location: workLocation,
-        employment_type: employee.employment_type,
-      })
-      .eq('id', employmentExisting.id);
-    if (error) throw new Error(error.message);
-  } else {
+  const nextEmployment = {
+    branch_id: branchId,
+    department_id: departmentId,
+    cost_center_id: costCenterId,
+    payroll_group_id: payrollGroupId,
+    job_title: employee.position,
+    job_grade: jobGrade,
+    work_location: workLocation,
+    employment_type: employee.employment_type,
+  };
+
+  const employmentChanged =
+    !employmentExisting ||
+    employmentExisting.branch_id !== nextEmployment.branch_id ||
+    employmentExisting.department_id !== nextEmployment.department_id ||
+    employmentExisting.cost_center_id !== nextEmployment.cost_center_id ||
+    employmentExisting.payroll_group_id !== nextEmployment.payroll_group_id ||
+    employmentExisting.job_title !== nextEmployment.job_title ||
+    employmentExisting.job_grade !== nextEmployment.job_grade ||
+    employmentExisting.work_location !== nextEmployment.work_location ||
+    employmentExisting.employment_type !== nextEmployment.employment_type;
+
+  if (!employmentExisting) {
     const { error } = await client
       .schema('hr')
       .from('employment_records')
       .insert({
         company_id: employee.company_id,
         employee_id: employee.id,
-        branch_id: branchId,
-        department_id: departmentId,
-        cost_center_id: costCenterId,
-        payroll_group_id: payrollGroupId,
-        job_title: employee.position,
-        job_grade: jobGrade,
-        work_location: workLocation,
-        employment_type: employee.employment_type,
+        ...nextEmployment,
         join_date: employee.joining_date,
         effective_from: employee.joining_date,
         is_current: true,
         created_at: employee.created_at ?? now,
       });
     if (error) throw new Error(error.message);
+  } else if (employmentChanged) {
+    if (effectiveFrom > String(employmentExisting.effective_from)) {
+      const { error: closeError } = await client
+        .schema('hr')
+        .from('employment_records')
+        .update({
+          is_current: false,
+          effective_to: dayBefore(effectiveFrom),
+        })
+        .eq('id', employmentExisting.id);
+      if (closeError) throw new Error(closeError.message);
+
+      const { error: insertError } = await client
+        .schema('hr')
+        .from('employment_records')
+        .insert({
+          company_id: employee.company_id,
+          employee_id: employee.id,
+          ...nextEmployment,
+          join_date: String(employmentExisting.join_date),
+          effective_from: effectiveFrom,
+          is_current: true,
+          created_at: now,
+        });
+      if (insertError) throw new Error(insertError.message);
+    } else {
+      const { error } = await client
+        .schema('hr')
+        .from('employment_records')
+        .update({
+          ...nextEmployment,
+        })
+        .eq('id', employmentExisting.id);
+      if (error) throw new Error(error.message);
+    }
   }
 
   const { data: compensationExisting, error: compensationFindError } = await client
     .schema('hr')
     .from('compensation_records')
-    .select('id')
+    .select('id,currency,salary_frequency,payment_method,base_salary,allowances,recurring_deductions,effective_from')
     .eq('employee_id', employee.id)
     .eq('is_current', true)
     .maybeSingle();
@@ -355,20 +412,51 @@ export async function syncEmployeeToEnterprise(
     base_salary: employee.base_salary,
     allowances: employee.allowances ?? {},
     recurring_deductions: employee.deductions ?? {},
-    effective_from: employee.joining_date,
+    effective_from: effectiveFrom,
     is_current: true,
   };
 
-  if (compensationExisting?.id) {
-    const { error } = await client
-      .schema('hr')
-      .from('compensation_records')
-      .update(compensationPayload)
-      .eq('id', compensationExisting.id);
-    if (error) throw new Error(error.message);
-  } else {
+  const compensationChanged =
+    !compensationExisting ||
+    compensationExisting.currency !== compensationPayload.currency ||
+    compensationExisting.salary_frequency !== compensationPayload.salary_frequency ||
+    compensationExisting.payment_method !== compensationPayload.payment_method ||
+    Number(compensationExisting.base_salary) !== Number(compensationPayload.base_salary) ||
+    stableJson((compensationExisting.allowances as Record<string, number> | null) ?? {}) !== stableJson(compensationPayload.allowances) ||
+    stableJson((compensationExisting.recurring_deductions as Record<string, number> | null) ?? {}) !== stableJson(compensationPayload.recurring_deductions);
+
+  if (!compensationExisting) {
     const { error } = await client.schema('hr').from('compensation_records').insert(compensationPayload);
     if (error) throw new Error(error.message);
+  } else if (compensationChanged) {
+    if (effectiveFrom > String(compensationExisting.effective_from)) {
+      const { error: closeError } = await client
+        .schema('hr')
+        .from('compensation_records')
+        .update({
+          is_current: false,
+          effective_to: dayBefore(effectiveFrom),
+        })
+        .eq('id', compensationExisting.id);
+      if (closeError) throw new Error(closeError.message);
+
+      const { error: insertError } = await client.schema('hr').from('compensation_records').insert(compensationPayload);
+      if (insertError) throw new Error(insertError.message);
+    } else {
+      const { error } = await client
+        .schema('hr')
+        .from('compensation_records')
+        .update({
+          currency: compensationPayload.currency,
+          salary_frequency: compensationPayload.salary_frequency,
+          payment_method: compensationPayload.payment_method,
+          base_salary: compensationPayload.base_salary,
+          allowances: compensationPayload.allowances,
+          recurring_deductions: compensationPayload.recurring_deductions,
+        })
+        .eq('id', compensationExisting.id);
+      if (error) throw new Error(error.message);
+    }
   }
 }
 
@@ -458,6 +546,74 @@ export async function getEmployeeEnterpriseContext(client: UntypedClient, compan
     payrollGroupId: (data?.payroll_group_id as string | null | undefined) ?? null,
     jobGrade: (data?.job_grade as string | null | undefined) ?? null,
     workLocation: (data?.work_location as string | null | undefined) ?? null,
+  };
+}
+
+export async function getEmployeeEnterpriseHistory(client: UntypedClient, companyId: string, employeeId: string) {
+  const [employmentResult, compensationResult, structure] = await Promise.all([
+    client
+      .schema('hr')
+      .from('employment_records')
+      .select('id,branch_id,department_id,cost_center_id,payroll_group_id,job_title,job_grade,work_location,employment_type,join_date,effective_from,effective_to,is_current,created_at')
+      .eq('company_id', companyId)
+      .eq('employee_id', employeeId)
+      .order('effective_from', { ascending: false }),
+    client
+      .schema('hr')
+      .from('compensation_records')
+      .select('id,currency,salary_frequency,payment_method,base_salary,allowances,recurring_deductions,effective_from,effective_to,is_current,created_at')
+      .eq('company_id', companyId)
+      .eq('employee_id', employeeId)
+      .order('effective_from', { ascending: false }),
+    getCompanyStructure(client, companyId),
+  ]);
+
+  if (employmentResult.error) {
+    throw new Error(employmentResult.error.message);
+  }
+  if (compensationResult.error) {
+    throw new Error(compensationResult.error.message);
+  }
+
+  const branchLookup = new Map(structure.branches.map((branch) => [branch.id, branch.name]));
+  const departmentLookup = new Map(structure.departments.map((department) => [department.id, department.name]));
+  const costCenterLookup = new Map(structure.costCenters.map((costCenter) => [costCenter.id, costCenter.name]));
+  const payrollGroupLookup = new Map(structure.payrollGroups.map((group) => [group.id, group.name]));
+
+  return {
+    employmentHistory: (employmentResult.data ?? []).map((record) => ({
+      id: record.id,
+      branchId: record.branch_id,
+      branchName: record.branch_id ? branchLookup.get(record.branch_id) ?? null : null,
+      departmentId: record.department_id,
+      departmentName: record.department_id ? departmentLookup.get(record.department_id) ?? null : null,
+      costCenterId: record.cost_center_id,
+      costCenterName: record.cost_center_id ? costCenterLookup.get(record.cost_center_id) ?? null : null,
+      payrollGroupId: record.payroll_group_id,
+      payrollGroupName: record.payroll_group_id ? payrollGroupLookup.get(record.payroll_group_id) ?? null : null,
+      jobTitle: record.job_title,
+      jobGrade: record.job_grade,
+      workLocation: record.work_location,
+      employmentType: record.employment_type,
+      joinDate: record.join_date,
+      effectiveFrom: record.effective_from,
+      effectiveTo: record.effective_to,
+      isCurrent: record.is_current,
+      createdAt: record.created_at,
+    })),
+    compensationHistory: (compensationResult.data ?? []).map((record) => ({
+      id: record.id,
+      currency: record.currency,
+      salaryFrequency: record.salary_frequency,
+      paymentMethod: record.payment_method,
+      baseSalary: Number(record.base_salary),
+      allowances: (record.allowances as Record<string, number> | null) ?? {},
+      recurringDeductions: (record.recurring_deductions as Record<string, number> | null) ?? {},
+      effectiveFrom: record.effective_from,
+      effectiveTo: record.effective_to,
+      isCurrent: record.is_current,
+      createdAt: record.created_at,
+    })),
   };
 }
 

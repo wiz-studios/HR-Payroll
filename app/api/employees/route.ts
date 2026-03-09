@@ -56,6 +56,7 @@ export async function POST(request: Request) {
       payrollGroupId: payload.payrollGroupId,
       jobGrade: payload.jobGrade,
       workLocation: payload.workLocation,
+      effectiveFrom: payload.joiningDate,
     });
   } catch (syncError) {
     await admin.schema('HR').from('employees').delete().eq('id', data.id);

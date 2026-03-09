@@ -13,6 +13,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { id } = await context.params;
   const updates = await request.json();
   const admin = createAdminClient();
+  const effectiveFrom = typeof updates.effectiveFrom === 'string' && updates.effectiveFrom ? updates.effectiveFrom : null;
+
+  if (effectiveFrom && effectiveFrom > new Date().toISOString().slice(0, 10)) {
+    return NextResponse.json(
+      { error: 'Future-dated changes are not available until the app reads employee state from versioned enterprise records.' },
+      { status: 400 }
+    );
+  }
 
   const { data: existing } = await admin.schema('HR').from('employees').select('*').eq('id', id).maybeSingle();
   if (!existing || existing.company_id !== auth.session.companyId) {
@@ -57,6 +65,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       payrollGroupId: updates.payrollGroupId,
       jobGrade: updates.jobGrade,
       workLocation: updates.workLocation,
+      effectiveFrom: updates.effectiveFrom,
     });
   } catch (syncError) {
     return NextResponse.json(
