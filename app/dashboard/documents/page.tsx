@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileStack, FolderOpen, ShieldCheck } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { canManageDocuments as canManageDocumentsByRole } from '@/lib/platform/roles';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
 import { PageHeader } from '@/components/app/page-header';
@@ -90,7 +91,7 @@ export default function DocumentsPage() {
     };
   }, []);
 
-  const canManageDocuments = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const canManageDocuments = session ? canManageDocumentsByRole(session.userRole) : false;
 
   const activeDocuments = useMemo(
     () => documents.filter((document) => document.status === 'active').length,

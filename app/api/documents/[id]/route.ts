@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog } from '@/lib/hr/repository';
+import { canManageDocuments } from '@/lib/platform/roles';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageDocuments(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can update employee documents.' }, { status: 403 });
   }
 

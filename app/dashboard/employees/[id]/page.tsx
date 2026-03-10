@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { authService, AuthSession } from '@/lib/auth';
+import { canManageEmployees as canManageEmployeesByRole, canReviewEmployeeChangeRequests } from '@/lib/platform/roles';
 import { db, Employee } from '@/lib/db-schema';
 import { formatCurrency, getStatusDisplayName, formatDate } from '@/lib/utils-hr';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -150,8 +151,8 @@ export default function EmployeeDetailPage() {
     jobGrade: '',
     workLocation: '',
   });
-  const canManageEmployee = session?.userRole === 'admin' || session?.userRole === 'manager';
-  const canReviewRequests = session?.userRole === 'admin';
+  const canManageEmployee = session ? canManageEmployeesByRole(session.userRole) : false;
+  const canReviewRequests = session ? canReviewEmployeeChangeRequests(session.userRole) : false;
 
   useEffect(() => {
     let mounted = true;

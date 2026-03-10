@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canReviewEmployeeChangeRequests } from '@/lib/platform/roles';
 import { getEmployeeChangeRequests, reviewEmployeeChangeRequest } from '@/lib/platform/workflow';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; requestId: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canReviewEmployeeChangeRequests(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can review change requests.' }, { status: 403 });
   }
 

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { mapEnterpriseRoleToLegacy, normalizeRole, type RuntimeRole } from '@/lib/platform/roles';
 
 type UntypedClient = SupabaseClient<any, any, any>;
 type CompanyStructureEntityType = 'branch' | 'department' | 'costCenter' | 'payrollGroup';
@@ -30,12 +31,6 @@ interface CompanyStructureMutation {
 function slugifyCompanyName(name: string) {
   const normalized = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return normalized || 'company';
-}
-
-function mapLegacyRoleToCore(role: 'admin' | 'manager' | 'employee') {
-  if (role === 'admin') return 'company_admin';
-  if (role === 'manager') return 'hr_manager';
-  return 'employee';
 }
 
 function normalizeOptionalValue(value?: string | null) {
@@ -179,7 +174,7 @@ export async function syncMembershipToEnterprise(
     email: string;
     first_name: string;
     last_name: string;
-    role: 'admin' | 'manager' | 'employee';
+    role: RuntimeRole;
     created_at?: string;
     updated_at?: string;
   }
@@ -195,7 +190,7 @@ export async function syncMembershipToEnterprise(
         email: membership.email,
         first_name: membership.first_name,
         last_name: membership.last_name,
-        role: mapLegacyRoleToCore(membership.role),
+        role: normalizeRole(membership.role),
         created_at: membership.created_at ?? now,
         updated_at: membership.updated_at ?? now,
       },
@@ -222,6 +217,8 @@ export async function syncMembershipToEnterprise(
     await upsertEmployeeUserLink(client, membership.company_id, employeeProfile.id as string, membership.user_id, 'sync');
   }
 }
+
+export { mapEnterpriseRoleToLegacy };
 
 async function ensureDepartment(client: UntypedClient, companyId: string, departmentName: string) {
   const normalizedName = departmentName.trim();

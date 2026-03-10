@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import {
+  canAccessApprovalsInbox,
+  canReviewEmployeeChangeRequests,
+  canReviewLeaveApprovals,
+  canReviewPayrollApprovals,
+} from '@/lib/platform/roles';
 import { getCompanyApprovalInbox } from '@/lib/platform/workflow';
 
 interface ApprovalAction {
@@ -12,7 +18,7 @@ interface ApprovalAction {
 export async function GET(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canAccessApprovalsInbox(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can access the approvals inbox.' }, { status: 403 });
   }
 
@@ -85,7 +91,7 @@ export async function GET(request: Request) {
           title: `${employee?.name ?? 'Employee'} ${requestType} request`,
           subtitle: employee?.employeeNumber ?? 'Employee record',
           href: `/dashboard/employees/${item.entityId}`,
-          canReview: auth.session.userRole === 'admin',
+          canReview: canReviewEmployeeChangeRequests(auth.session.userRole),
           latestAction,
         };
       }
@@ -101,7 +107,7 @@ export async function GET(request: Request) {
           title: `${employee?.name ?? 'Employee'} ${leaveType} leave`,
           subtitle: [employee?.employeeNumber, startDate && endDate ? `${startDate} to ${endDate}` : null].filter(Boolean).join(' · '),
           href: '/dashboard/leaves',
-          canReview: ['admin', 'manager'].includes(auth.session.userRole),
+          canReview: canReviewLeaveApprovals(auth.session.userRole),
           latestAction,
         };
       }
@@ -112,7 +118,7 @@ export async function GET(request: Request) {
         title: `Payroll approval ${typeof item.payload.payrollMonth === 'string' ? item.payload.payrollMonth : payroll?.month ?? ''}`.trim(),
         subtitle: payroll?.status ? `Current cycle status: ${payroll.status.replaceAll('_', ' ')}` : 'Payroll run',
         href: '/dashboard/payroll',
-        canReview: auth.session.userRole === 'admin',
+        canReview: canReviewPayrollApprovals(auth.session.userRole),
         latestAction,
       };
     });

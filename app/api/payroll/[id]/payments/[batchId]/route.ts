@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canManagePaymentBatches } from '@/lib/platform/roles';
 import { listPaymentBatches, updatePaymentBatchStatus } from '@/lib/platform/payments';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; batchId: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canManagePaymentBatches(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can manage payment batches.' }, { status: 403 });
   }
 

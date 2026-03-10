@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Search, UserPlus, Users } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { canManageEmployees as canManageEmployeesByRole } from '@/lib/platform/roles';
 import { db, Employee } from '@/lib/db-schema';
 import { formatCurrency, generateEmployeeNumber, getStatusDisplayName } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
@@ -92,7 +93,7 @@ export default function EmployeesPage() {
 
   const departmentCount = useMemo(() => new Set(employees.map((employee) => employee.department)).size, [employees]);
   const monthlyExposure = useMemo(() => employees.reduce((sum, employee) => sum + employee.baseSalary, 0), [employees]);
-  const canManageEmployees = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const canManageEmployees = session ? canManageEmployeesByRole(session.userRole) : false;
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData((current) => ({ ...current, [event.target.name]: event.target.value }));

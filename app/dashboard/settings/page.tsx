@@ -3,8 +3,13 @@
 import { useEffect, useState } from 'react';
 import { Building2, GitBranch, KeyRound, Landmark, Plus, Users, Wallet } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import {
+  canManageCompanySettings,
+  canManageStructure as canManageStructureByRole,
+  getRoleDisplayName,
+  type RuntimeRole,
+} from '@/lib/platform/roles';
 import { Company, db, User } from '@/lib/db-schema';
-import { getRoleDisplayName } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
 import { PageHeader } from '@/components/app/page-header';
@@ -137,7 +142,7 @@ export default function SettingsPage() {
     email: '',
     firstName: '',
     lastName: '',
-    role: 'manager' as const,
+    role: 'hr_manager' as RuntimeRole,
   });
   const [journalAccounts, setJournalAccounts] = useState<JournalAccountConfig>(defaultJournalAccounts);
   const [isEditingJournalAccounts, setIsEditingJournalAccounts] = useState(false);
@@ -147,8 +152,8 @@ export default function SettingsPage() {
   const [isStructureDialogOpen, setIsStructureDialogOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const isAdmin = session?.userRole === 'admin';
-  const canManageStructure = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const isAdmin = session ? canManageCompanySettings(session.userRole) : false;
+  const canManageStructure = session ? canManageStructureByRole(session.userRole) : false;
 
   useEffect(() => {
     let mounted = true;
@@ -233,7 +238,7 @@ export default function SettingsPage() {
       );
       setUsers((current) => [...current, result.user]);
       setIsAddingUser(false);
-      setUserForm({ email: '', firstName: '', lastName: '', role: 'manager' });
+      setUserForm({ email: '', firstName: '', lastName: '', role: 'hr_manager' });
       setMessage(`Team member added. Temporary password: ${result.temporaryPassword}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add team member.');
@@ -571,9 +576,12 @@ export default function SettingsPage() {
                         onChange={(event) => setUserForm((current) => ({ ...current, role: event.target.value as typeof userForm.role }))}
                         className="mt-2 h-12 w-full rounded-2xl border border-border/70 bg-card px-4 text-sm outline-none ring-ring/50 transition focus:ring-2"
                       >
+                        <option value="hr_manager">HR Manager</option>
+                        <option value="payroll_manager">Payroll Manager</option>
                         <option value="manager">Manager</option>
+                        <option value="finance_approver">Finance Approver</option>
                         <option value="employee">Employee</option>
-                        <option value="admin">Administrator</option>
+                        <option value="company_admin">Company Administrator</option>
                       </select>
                     </div>
                     <div className="flex justify-end gap-3">
@@ -605,7 +613,7 @@ export default function SettingsPage() {
 
       <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <MetricCard label="Users" value={users.length} detail="Assigned to this workspace" icon={<Users className="h-5 w-5" />} tone="primary" />
-        <MetricCard label="Administrators" value={users.filter((user) => user.role === 'admin').length} detail="Users with full control" icon={<KeyRound className="h-5 w-5" />} tone="accent" />
+        <MetricCard label="Administrators" value={users.filter((user) => ['company_admin', 'platform_admin'].includes(String(user.role))).length} detail="Users with full control" icon={<KeyRound className="h-5 w-5" />} tone="accent" />
         <MetricCard label="Branches" value={structure.branches.length} detail="Operational locations" icon={<GitBranch className="h-5 w-5" />} tone="neutral" />
         <MetricCard label="Departments" value={structure.departments.length} detail="Workforce structure" icon={<Building2 className="h-5 w-5" />} tone="neutral" />
         <MetricCard label="Cost centers" value={structure.costCenters.length} detail="Finance allocation points" icon={<Landmark className="h-5 w-5" />} tone="neutral" />

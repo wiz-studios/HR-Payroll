@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase/database.types';
+import { normalizeRole, type RuntimeRole } from '@/lib/platform/roles';
 import type {
   AuditLog,
   Company,
@@ -12,6 +13,7 @@ import type {
 } from './types';
 
 const HR_SCHEMA = 'HR';
+type UntypedClient = SupabaseClient<any, any, any>;
 
 function assertNoError(error: { message: string } | null) {
   if (error) {
@@ -53,7 +55,29 @@ export function mapUser(row: Database['HR']['Tables']['company_users']['Row']): 
     email: row.email,
     firstName: row.first_name,
     lastName: row.last_name,
-    role: row.role,
+    role: normalizeRole(row.role),
+    companyId: row.company_id,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
+}
+
+function mapCoreUser(row: {
+  user_id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: RuntimeRole;
+  company_id: string;
+  created_at: string;
+  updated_at: string;
+}): User {
+  return {
+    id: row.user_id,
+    email: row.email,
+    firstName: row.first_name,
+    lastName: row.last_name,
+    role: normalizeRole(row.role),
     companyId: row.company_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -190,12 +214,36 @@ export async function getCompany(client: SupabaseClient<Database>, companyId: st
 }
 
 export async function getCompanyUserByUserId(client: SupabaseClient<Database>, userId: string) {
+  const coreClient = client as unknown as UntypedClient;
+  const { data: coreData, error: coreError } = await coreClient
+    .schema('core')
+    .from('company_memberships')
+    .select('company_id,user_id,email,first_name,last_name,role,created_at,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!coreError && coreData) {
+    return mapCoreUser(coreData);
+  }
+
   const { data, error } = await client.schema(HR_SCHEMA).from('company_users').select('*').eq('user_id', userId).maybeSingle();
   assertNoError(error);
   return data ? mapUser(data) : null;
 }
 
 export async function getUsersByCompany(client: SupabaseClient<Database>, companyId: string) {
+  const coreClient = client as unknown as UntypedClient;
+  const { data: coreData, error: coreError } = await coreClient
+    .schema('core')
+    .from('company_memberships')
+    .select('company_id,user_id,email,first_name,last_name,role,created_at,updated_at')
+    .eq('company_id', companyId)
+    .order('created_at');
+
+  if (!coreError && coreData) {
+    return coreData.map(mapCoreUser);
+  }
+
   const { data, error } = await client.schema(HR_SCHEMA).from('company_users').select('*').eq('company_id', companyId).order('created_at');
   assertNoError(error);
   return (data ?? []).map(mapUser);

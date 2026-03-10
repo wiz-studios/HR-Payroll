@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { getCompany, getCompanyUserByUserId } from '@/lib/hr/repository';
-import type { User } from '@/lib/hr/types';
+import type { CompanyRole } from '@/lib/platform/roles';
 
 export interface ServerSession {
   userId: string;
   userEmail: string;
   userName: string;
-  userRole: User['role'];
+  userRole: CompanyRole;
   companyId: string;
   companyName: string;
 }

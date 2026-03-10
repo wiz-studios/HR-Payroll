@@ -5,6 +5,13 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowRight, CheckCheck, CircleDollarSign, FileText, LockKeyhole, Play, Send } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
 import { AuditLog, db, Payroll, PayrollDetail } from '@/lib/db-schema';
+import {
+  canManagePaymentBatches,
+  canMarkPayrollPaid,
+  canProcessPayroll,
+  canReviewPayrollApprovals,
+  canSubmitPayrollForApproval,
+} from '@/lib/platform/roles';
 import { generatePayrollSummary, PayrollCalculationResult, PayrollSummary } from '@/lib/payroll-calculator';
 import { formatCurrency, getCurrentMonth, getMonthName, getNextMonth, getPreviousMonth } from '@/lib/utils-hr';
 import { DataTable } from '@/components/data-table';
@@ -324,7 +331,7 @@ export default function PayrollPage() {
 
   const payrollStatusAction = (() => {
     if (!payroll) return null;
-    if (payroll.status === 'draft') {
+    if (payroll.status === 'draft' && session && canSubmitPayrollForApproval(session.userRole)) {
       return (
         <Dialog open={isApprovalDialogOpen} onOpenChange={setIsApprovalDialogOpen}>
           <DialogTrigger asChild>
@@ -352,7 +359,7 @@ export default function PayrollPage() {
         </Dialog>
       );
     }
-    if (payroll.status === 'pending_approval' && session?.userRole === 'admin') {
+    if (payroll.status === 'pending_approval' && session && canReviewPayrollApprovals(session.userRole)) {
       const pendingRequest = approvalRequests.find((request) => request.status === 'pending');
       return pendingRequest ? (
         <div className="flex gap-3">
@@ -366,7 +373,7 @@ export default function PayrollPage() {
         </div>
       ) : null;
     }
-    if (payroll.status === 'approved' && session?.userRole === 'admin') {
+    if (payroll.status === 'approved' && session && canProcessPayroll(session.userRole)) {
       return (
         <Button
           className="rounded-2xl"
@@ -377,7 +384,7 @@ export default function PayrollPage() {
         </Button>
       );
     }
-    if (payroll.status === 'processed' && session?.userRole === 'admin') {
+    if (payroll.status === 'processed' && session && canMarkPayrollPaid(session.userRole)) {
       return (
         <Button
           className="rounded-2xl"
@@ -645,7 +652,7 @@ export default function PayrollPage() {
                 <p className="font-mono text-xs uppercase tracking-[0.28em] text-primary/80">Payment Operations</p>
                 <p className="mt-2 text-sm font-medium text-foreground">Disbursement and reconciliation</p>
               </div>
-              {payroll?.status === 'processed' && session.userRole === 'admin' ? (
+              {payroll?.status === 'processed' && canManagePaymentBatches(session.userRole) ? (
                 <Button className="rounded-2xl" onClick={() => void createPaymentBatch()}>
                   Create batch
                 </Button>

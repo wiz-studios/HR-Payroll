@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canManageEmployees, isEmployeeRole } from '@/lib/platform/roles';
 import { createEmployeeChangeRequest, getEmployeeChangeRequests } from '@/lib/platform/workflow';
 import { findSessionEmployee } from '@/lib/server/self-service';
 
@@ -36,11 +37,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const admin = createAdminClient();
   const payload = await request.json();
-  const selfEmployee = auth.session.userRole === 'employee' ? await findSessionEmployee(admin, auth.session) : null;
+  const selfEmployee = isEmployeeRole(auth.session.userRole) ? await findSessionEmployee(admin, auth.session) : null;
 
-  const canSubmitAsManager = ['admin', 'manager'].includes(auth.session.userRole);
+  const canSubmitAsManager = canManageEmployees(auth.session.userRole);
   const canSubmitOwnBankChange =
-    auth.session.userRole === 'employee' &&
+    isEmployeeRole(auth.session.userRole) &&
     selfEmployee?.id === id &&
     payload.requestType === 'bank_details';
 

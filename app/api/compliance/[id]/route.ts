@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapComplianceRecord } from '@/lib/hr/repository';
+import { canFinalizeCompliance, canManageCompliance } from '@/lib/platform/roles';
 
 const COMPLIANCE_TRANSITIONS = {
   pending: ['submitted'],
@@ -17,10 +18,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if (!updates.status || !(updates.status in COMPLIANCE_TRANSITIONS)) {
     return NextResponse.json({ error: 'Invalid compliance status.' }, { status: 400 });
   }
-  if (updates.status === 'submitted' && !['admin', 'manager'].includes(auth.session.userRole)) {
+  if (updates.status === 'submitted' && !canManageCompliance(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can submit compliance records.' }, { status: 403 });
   }
-  if ((updates.status === 'accepted' || updates.status === 'rejected') && auth.session.userRole !== 'admin') {
+  if ((updates.status === 'accepted' || updates.status === 'rejected') && !canFinalizeCompliance(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can finalize compliance records.' }, { status: 403 });
   }
   const admin = createAdminClient();

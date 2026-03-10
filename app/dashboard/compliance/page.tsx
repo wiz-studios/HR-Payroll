@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, FileCheck2, Plus } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { canFinalizeCompliance as canFinalizeComplianceByRole, canManageCompliance as canManageComplianceByRole } from '@/lib/platform/roles';
 import { ComplianceRecord, db } from '@/lib/db-schema';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
@@ -63,8 +64,8 @@ export default function CompliancePage() {
   }, []);
 
   const pendingCount = useMemo(() => records.filter((record) => record.status === 'pending').length, [records]);
-  const canSubmitCompliance = session?.userRole === 'admin' || session?.userRole === 'manager';
-  const canFinalizeCompliance = session?.userRole === 'admin';
+  const canSubmitCompliance = session ? canManageComplianceByRole(session.userRole) : false;
+  const canFinalizeCompliance = session ? canFinalizeComplianceByRole(session.userRole) : false;
 
   const handleCreateRecord = async (event: React.FormEvent) => {
     event.preventDefault();

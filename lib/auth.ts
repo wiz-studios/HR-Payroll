@@ -1,12 +1,13 @@
 import { getCompany, getCompanyUserByUserId } from '@/lib/hr/repository';
 import type { User } from '@/lib/hr/types';
+import type { CompanyRole, RuntimeRole } from '@/lib/platform/roles';
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 export interface AuthSession {
   userId: string;
   userEmail: string;
   userName: string;
-  userRole: User['role'];
+  userRole: CompanyRole;
   companyId: string;
   companyName: string;
 }
@@ -128,7 +129,7 @@ class AuthService {
     email: string,
     firstName: string,
     lastName: string,
-    role: User['role']
+    role: RuntimeRole
   ) {
     return requestJson<{ user: User; temporaryPassword: string }>('/api/team-members', {
       method: 'POST',

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canReviewLeaveApprovals } from '@/lib/platform/roles';
 import { getLeaveApprovalRequests, reviewLeaveApprovalRequest } from '@/lib/platform/workflow';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; requestId: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canReviewLeaveApprovals(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can review leave approvals.' }, { status: 403 });
   }
 

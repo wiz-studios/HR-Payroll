@@ -12,6 +12,7 @@ import {
   Users,
 } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { isEmployeeRole } from '@/lib/platform/roles';
 import { db } from '@/lib/db-schema';
 import { formatCurrency, getMonthName } from '@/lib/utils-hr';
 import { MetricCard } from '@/components/app/metric-card';
@@ -106,7 +107,7 @@ export default function DashboardPage() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 4);
   const quickActions =
-    session.userRole === 'employee'
+    isEmployeeRole(session.userRole)
       ? [
           {
             title: 'Open my profile',
@@ -175,7 +176,7 @@ export default function DashboardPage() {
         actions={
           <>
             <StatusPill label={todayLabel} tone="info" />
-            {session.userRole === 'employee' ? (
+            {isEmployeeRole(session.userRole) ? (
               <Button asChild className="rounded-2xl px-5">
                 <Link href="/dashboard/profile">
                   Open profile

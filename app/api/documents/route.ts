@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog } from '@/lib/hr/repository';
+import { canManageDocuments, isEmployeeRole } from '@/lib/platform/roles';
 import { findSessionEmployee, getSessionEmployeeDocuments } from '@/lib/server/self-service';
 
 export async function GET() {
@@ -9,7 +10,7 @@ export async function GET() {
 
   const admin = createAdminClient();
 
-  if (auth.session.userRole === 'employee') {
+  if (isEmployeeRole(auth.session.userRole)) {
     try {
       const result = await getSessionEmployeeDocuments(admin, auth.session);
       return NextResponse.json({
@@ -88,7 +89,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageDocuments(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can upload employee documents.' }, { status: 403 });
   }
 

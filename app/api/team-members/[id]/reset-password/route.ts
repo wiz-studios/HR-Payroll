@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canManageTeamMembers } from '@/lib/platform/roles';
 
 function generateTemporaryPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
@@ -9,7 +10,7 @@ function generateTemporaryPassword() {
 export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canManageTeamMembers(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can reset passwords.' }, { status: 403 });
   }
 

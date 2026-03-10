@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canReviewPayrollApprovals } from '@/lib/platform/roles';
 import { getPayrollApprovalRequests, reviewPayrollApprovalRequest } from '@/lib/platform/workflow';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string; requestId: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canReviewPayrollApprovals(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can review payroll approvals.' }, { status: 403 });
   }
 

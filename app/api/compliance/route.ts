@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapComplianceRecord } from '@/lib/hr/repository';
+import { canManageCompliance } from '@/lib/platform/roles';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageCompliance(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can create compliance records.' }, { status: 403 });
   }
   const payload = await request.json();

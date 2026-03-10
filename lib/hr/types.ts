@@ -1,3 +1,5 @@
+import type { RuntimeRole } from '@/lib/platform/roles';
+
 export interface Company {
   id: string;
   name: string;
@@ -19,7 +21,7 @@ export interface User {
   email: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'manager' | 'employee';
+  role: RuntimeRole;
   companyId: string;
   createdAt: Date;
   updatedAt: Date;

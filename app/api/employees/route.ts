@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapEmployee } from '@/lib/hr/repository';
+import { canManageEmployees } from '@/lib/platform/roles';
 import { syncEmployeeToEnterprise } from '@/lib/platform/sync';
 
 export async function POST(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageEmployees(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can create employees.' }, { status: 403 });
   }
 

@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapCompany } from '@/lib/hr/repository';
+import { canManageCompanySettings } from '@/lib/platform/roles';
 import { syncCompanyToEnterprise } from '@/lib/platform/sync';
 
 export async function PATCH(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canManageCompanySettings(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can update company settings.' }, { status: 403 });
   }
 

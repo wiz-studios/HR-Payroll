@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { getRoleDisplayName as getEnterpriseRoleDisplayName, normalizeRole } from '@/lib/platform/roles';
 
 /**
  * Generate unique IDs for entities
@@ -220,25 +221,25 @@ export function generateNHIFReportFilename(month: string): string {
  * Check if user has permission
  */
 export function hasPermission(userRole: string, action: string): boolean {
+  const role = normalizeRole(userRole as never);
   const permissions: Record<string, string[]> = {
-    admin: ['manage_users', 'manage_employees', 'run_payroll', 'approve_payroll', 'view_reports', 'manage_compliance'],
+    platform_admin: ['manage_users', 'manage_employees', 'run_payroll', 'approve_payroll', 'view_reports', 'manage_compliance'],
+    company_admin: ['manage_users', 'manage_employees', 'run_payroll', 'approve_payroll', 'view_reports', 'manage_compliance'],
+    hr_manager: ['manage_employees', 'run_payroll', 'view_reports'],
+    payroll_manager: ['run_payroll', 'approve_payroll', 'view_reports'],
     manager: ['manage_employees', 'run_payroll', 'view_reports'],
+    finance_approver: ['view_reports', 'approve_payroll'],
     employee: ['view_own_payslip', 'download_payslip'],
   };
-  
-  return permissions[userRole]?.includes(action) ?? false;
+
+  return permissions[role]?.includes(action) ?? false;
 }
 
 /**
  * Get role display name
  */
 export function getRoleDisplayName(role: string): string {
-  const names: Record<string, string> = {
-    admin: 'Administrator',
-    manager: 'HR Manager',
-    employee: 'Employee',
-  };
-  return names[role] ?? role;
+  return getEnterpriseRoleDisplayName(role as never) ?? role;
 }
 
 /**

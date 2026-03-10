@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapPayroll } from '@/lib/hr/repository';
+import { canMarkPayrollPaid, canProcessPayroll } from '@/lib/platform/roles';
 import { hasReconciledPaymentBatch, syncPayrollRunToEnterprise } from '@/lib/platform/payments';
 
 const TRANSITIONS = {
@@ -51,8 +52,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     );
   }
 
-  if ((nextStatus === 'processed' || nextStatus === 'paid') && auth.session.userRole !== 'admin') {
-    return NextResponse.json({ error: 'Only administrators can process payroll.' }, { status: 403 });
+  if (nextStatus === 'processed' && !canProcessPayroll(auth.session.userRole)) {
+    return NextResponse.json({ error: 'Only authorized payroll operators can process payroll.' }, { status: 403 });
+  }
+
+  if (nextStatus === 'paid' && !canMarkPayrollPaid(auth.session.userRole)) {
+    return NextResponse.json({ error: 'Only finance approvers or company administrators can mark payroll as paid.' }, { status: 403 });
   }
 
   if (nextStatus === 'paid') {

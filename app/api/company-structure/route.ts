@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canManageStructure } from '@/lib/platform/roles';
 import { createCompanyStructureItem, getCompanyStructure, updateCompanyStructureItem } from '@/lib/platform/sync';
 
 export async function GET() {
@@ -22,7 +23,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageStructure(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can manage organization structures.' }, { status: 403 });
   }
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canManageStructure(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can manage organization structures.' }, { status: 403 });
   }
 

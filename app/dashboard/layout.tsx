@@ -23,6 +23,7 @@ import {
   Users,
 } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { getRoleDisplayName, type CompanyRole } from '@/lib/platform/roles';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,18 +40,18 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
-  { label: 'Overview', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'employee'] },
-  { label: 'My Profile', path: '/dashboard/profile', icon: UserRound, roles: ['admin', 'manager', 'employee'] },
-  { label: 'Payslips', path: '/dashboard/payslips', icon: FileText, roles: ['admin', 'manager', 'employee'] },
-  { label: 'Documents', path: '/dashboard/documents', icon: FolderKanban, roles: ['admin', 'manager', 'employee'] },
-  { label: 'Employees', path: '/dashboard/employees', icon: Users, roles: ['admin', 'manager'] },
-  { label: 'Leave Desk', path: '/dashboard/leaves', icon: BriefcaseBusiness, roles: ['admin', 'manager', 'employee'] },
-  { label: 'Payroll Run', path: '/dashboard/payroll', icon: CircleDollarSign, roles: ['admin', 'manager'] },
-  { label: 'Approvals', path: '/dashboard/approvals', icon: Bell, roles: ['admin', 'manager'] },
-  { label: 'Reports', path: '/dashboard/reports', icon: FileBarChart2, roles: ['admin', 'manager'] },
-  { label: 'Compliance', path: '/dashboard/compliance', icon: ClipboardCheck, roles: ['admin'] },
-  { label: 'Settings', path: '/dashboard/settings', icon: Settings, roles: ['admin'] },
+const navItems: Array<{ label: string; path: string; icon: typeof LayoutDashboard; roles: CompanyRole[] }> = [
+  { label: 'Overview', path: '/dashboard', icon: LayoutDashboard, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'employee', 'finance_approver'] },
+  { label: 'My Profile', path: '/dashboard/profile', icon: UserRound, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'employee', 'finance_approver'] },
+  { label: 'Payslips', path: '/dashboard/payslips', icon: FileText, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'employee', 'finance_approver'] },
+  { label: 'Documents', path: '/dashboard/documents', icon: FolderKanban, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'employee', 'finance_approver'] },
+  { label: 'Employees', path: '/dashboard/employees', icon: Users, roles: ['platform_admin', 'company_admin', 'hr_manager', 'manager'] },
+  { label: 'Leave Desk', path: '/dashboard/leaves', icon: BriefcaseBusiness, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'employee', 'finance_approver'] },
+  { label: 'Payroll Run', path: '/dashboard/payroll', icon: CircleDollarSign, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'finance_approver'] },
+  { label: 'Approvals', path: '/dashboard/approvals', icon: Bell, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'finance_approver'] },
+  { label: 'Reports', path: '/dashboard/reports', icon: FileBarChart2, roles: ['platform_admin', 'company_admin', 'hr_manager', 'payroll_manager', 'manager', 'finance_approver'] },
+  { label: 'Compliance', path: '/dashboard/compliance', icon: ClipboardCheck, roles: ['platform_admin', 'company_admin', 'hr_manager', 'manager'] },
+  { label: 'Settings', path: '/dashboard/settings', icon: Settings, roles: ['platform_admin', 'company_admin'] },
 ];
 
 function Sidebar({
@@ -248,7 +249,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                       {activeItem?.label ?? 'PayrollKE'}
                     </h1>
                     <span className="hidden rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-secondary-foreground sm:inline-flex">
-                      {session.userRole}
+                      {getRoleDisplayName(session.userRole)}
                     </span>
                   </div>
                 </div>

@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog } from '@/lib/hr/repository';
 import { getJournalAccountConfig, saveJournalAccountConfig } from '@/lib/platform/journals';
+import { canReadJournalAccounts, canUpdateJournalAccounts } from '@/lib/platform/roles';
 
 export async function GET() {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canReadJournalAccounts(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can access journal accounts.' }, { status: 403 });
   }
 
@@ -26,7 +27,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canUpdateJournalAccounts(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can update journal accounts.' }, { status: 403 });
   }
 

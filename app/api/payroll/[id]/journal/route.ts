@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canAccessReports } from '@/lib/platform/roles';
 import { getPayrollJournal } from '@/lib/platform/journals';
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canAccessReports(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can access payroll journals.' }, { status: 403 });
   }
 

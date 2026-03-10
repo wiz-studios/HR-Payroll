@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapLeaveRequest } from '@/lib/hr/repository';
+import { isEmployeeRole } from '@/lib/platform/roles';
 import { createLeaveApprovalRequest, getLeaveApprovalRequests } from '@/lib/platform/workflow';
 import { findSessionEmployee } from '@/lib/server/self-service';
 
@@ -9,9 +10,9 @@ export async function GET() {
   if ('error' in auth) return auth.error;
 
   const admin = createAdminClient();
-  const selfEmployee = auth.session.userRole === 'employee' ? await findSessionEmployee(admin, auth.session) : null;
+  const selfEmployee = isEmployeeRole(auth.session.userRole) ? await findSessionEmployee(admin, auth.session) : null;
 
-  if (auth.session.userRole === 'employee' && !selfEmployee) {
+  if (isEmployeeRole(auth.session.userRole) && !selfEmployee) {
     return NextResponse.json({ error: 'No employee profile is linked to this account yet.' }, { status: 404 });
   }
 
@@ -22,8 +23,7 @@ export async function GET() {
     .eq('company_id', auth.session.companyId)
     .order('created_at', { ascending: false });
 
-  const { data, error } =
-    auth.session.userRole === 'employee' ? await query.eq('employee_id', selfEmployee!.id) : await query;
+  const { data, error } = isEmployeeRole(auth.session.userRole) ? await query.eq('employee_id', selfEmployee!.id) : await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
@@ -38,13 +38,13 @@ export async function POST(request: Request) {
   const payload = await request.json();
   const admin = createAdminClient();
   const now = new Date().toISOString();
-  const selfEmployee = auth.session.userRole === 'employee' ? await findSessionEmployee(admin, auth.session) : null;
+  const selfEmployee = isEmployeeRole(auth.session.userRole) ? await findSessionEmployee(admin, auth.session) : null;
 
-  if (auth.session.userRole === 'employee' && !selfEmployee) {
+  if (isEmployeeRole(auth.session.userRole) && !selfEmployee) {
     return NextResponse.json({ error: 'No employee profile is linked to this account yet.' }, { status: 404 });
   }
 
-  const employeeId = auth.session.userRole === 'employee' ? selfEmployee!.id : payload.employeeId;
+  const employeeId = isEmployeeRole(auth.session.userRole) ? selfEmployee!.id : payload.employeeId;
 
   const { data, error } = await admin
     .schema('HR')

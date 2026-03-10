@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BriefcaseBusiness, CalendarDays, Plus } from 'lucide-react';
 import { authService, AuthSession } from '@/lib/auth';
+import { canReviewLeaveApprovals, isEmployeeRole } from '@/lib/platform/roles';
 import { db, Employee, LeaveRequest } from '@/lib/db-schema';
 import { DataTable } from '@/components/data-table';
 import { MetricCard } from '@/components/app/metric-card';
@@ -86,7 +87,7 @@ export default function LeavesPage() {
       const [companyEmployees, leaveResponse, approvalsResponse] = await Promise.all([
         db.getEmployeesByCompany(currentSession.companyId),
         fetch('/api/leave-requests'),
-        currentSession.userRole === 'employee' ? Promise.resolve(null) : fetch('/api/approvals'),
+        isEmployeeRole(currentSession.userRole) ? Promise.resolve(null) : fetch('/api/approvals'),
       ]);
       const leavePayload = (await leaveResponse.json().catch(() => ({ leaveRequests: [] }))) as {
         leaveRequests?: LeaveRequest[];
@@ -117,7 +118,7 @@ export default function LeavesPage() {
       setEmployees(companyEmployees);
       setApprovalRequests(leaveApprovals);
       const selfEmployee = companyEmployees.find((item) => item.email === currentSession.userEmail) ?? null;
-      if (selfEmployee && currentSession.userRole === 'employee') {
+      if (selfEmployee && isEmployeeRole(currentSession.userRole)) {
         setFormData((current) => ({ ...current, employeeId: selfEmployee.id }));
       }
       setLeaves(
@@ -144,7 +145,7 @@ export default function LeavesPage() {
   }, []);
 
   const pendingLeaves = useMemo(() => leaves.filter((leave) => leave.status === 'pending').length, [leaves]);
-  const canManageLeaves = session?.userRole === 'admin' || session?.userRole === 'manager';
+  const canManageLeaves = session ? canReviewLeaveApprovals(session.userRole) : false;
   const canCreateLeave = Boolean(session);
   const latestApprovalByLeave = useMemo(
     () =>

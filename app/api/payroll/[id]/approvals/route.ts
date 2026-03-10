@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
+import { canSubmitPayrollForApproval } from '@/lib/platform/roles';
 import { createPayrollApprovalRequest, getPayrollApprovalRequests } from '@/lib/platform/workflow';
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -31,7 +32,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (!['admin', 'manager'].includes(auth.session.userRole)) {
+  if (!canSubmitPayrollForApproval(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators and managers can submit payroll approvals.' }, { status: 403 });
   }
 

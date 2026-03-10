@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { insertAuditLog, mapUser } from '@/lib/hr/repository';
+import {
+  canManageTeamMembers,
+  mapEnterpriseRoleToLegacy,
+  normalizeRole,
+  type RuntimeRole,
+} from '@/lib/platform/roles';
 import { syncMembershipToEnterprise } from '@/lib/platform/sync';
 
 function generateTemporaryPassword() {
@@ -11,7 +17,7 @@ function generateTemporaryPassword() {
 export async function POST(request: Request) {
   const auth = await requireServerSession();
   if ('error' in auth) return auth.error;
-  if (auth.session.userRole !== 'admin') {
+  if (!canManageTeamMembers(auth.session.userRole)) {
     return NextResponse.json({ error: 'Only administrators can add team members.' }, { status: 403 });
   }
 
@@ -19,7 +25,7 @@ export async function POST(request: Request) {
     email: string;
     firstName: string;
     lastName: string;
-    role: 'admin' | 'manager' | 'employee';
+    role: RuntimeRole;
   };
 
   const admin = createAdminClient();
@@ -49,7 +55,7 @@ export async function POST(request: Request) {
       email: payload.email,
       first_name: payload.firstName,
       last_name: payload.lastName,
-      role: payload.role,
+      role: mapEnterpriseRoleToLegacy(payload.role),
       created_at: now,
       updated_at: now,
     })
@@ -91,7 +97,10 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({
-    user: mapUser(data),
+    user: {
+      ...mapUser(data),
+      role: normalizeRole(payload.role),
+    },
     temporaryPassword,
   });
 }

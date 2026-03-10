@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
 import { getCompany, mapEmployee, mapPayroll, mapPayrollDetail } from '@/lib/hr/repository';
+import { isEmployeeRole } from '@/lib/platform/roles';
 import { findSessionEmployee } from '@/lib/server/self-service';
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -24,7 +25,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
     return NextResponse.json({ error: 'Payslip not found.' }, { status: 404 });
   }
 
-  if (auth.session.userRole === 'employee') {
+  if (isEmployeeRole(auth.session.userRole)) {
     const employee = await findSessionEmployee(admin, auth.session);
     if (!employee || employee.id !== detail.employee_id) {
       return NextResponse.json({ error: 'You can only access your own payslips.' }, { status: 403 });
