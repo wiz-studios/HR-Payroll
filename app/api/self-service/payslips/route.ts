@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createAdminClient, requireServerSession } from '@/lib/server/auth';
-import { mapPayroll, mapPayrollDetail } from '@/lib/hr/repository';
+import { mapEmployee, mapPayroll, mapPayrollDetail } from '@/lib/hr/repository';
 import { findSessionEmployee } from '@/lib/server/self-service';
 
 export async function GET() {
